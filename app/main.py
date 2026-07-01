@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import math
@@ -2108,7 +2109,7 @@ def read_wav_float32(path: Path) -> tuple[Any, int]:
         sample_width = wav.getsampwidth()
         frames = wav.readframes(wav.getnframes())
     if sample_width != 2:
-        raise RuntimeError("La diarizacion espera WAV PCM 16-bit.")
+        raise RuntimeError("La separacion de hablantes espera WAV PCM 16-bit.")
     samples = np.frombuffer(frames, dtype="<i2").astype("float32") / 32768.0
     if channels > 1:
         samples = samples.reshape(-1, channels).mean(axis=1)
@@ -2191,7 +2192,7 @@ def run_diarization(wav_path: Path, output_path: Path, num_speakers: Optional[in
         raise RuntimeError(f"sherpa-onnx fallo o fue terminado:\n{detail[-2000:]}")
     append_project_log(project_id, f"EXIT {returncode}")
     if not output_path.exists():
-        raise RuntimeError("sherpa-onnx termino, pero no genero diarizacion.")
+        raise RuntimeError("sherpa-onnx termino, pero no genero separacion de hablantes.")
     return json.loads(output_path.read_text(encoding="utf-8"))
 
 
@@ -2834,7 +2835,7 @@ def format_diarization_quality_warning(quality: dict[str, Any]) -> str:
             raw_parts.append(f"{raw_overlap_count} solapes crudos")
         if raw_micro_turns >= 20:
             raw_parts.append(f"{raw_micro_turns} micro-turnos")
-        notes.append(f"se suavizo una diarizacion inestable ({', '.join(raw_parts)})")
+        notes.append(f"se suavizo una separacion de hablantes inestable ({', '.join(raw_parts)})")
     if short_islands >= 20:
         notes.append(f"quedan {short_islands} cambios breves de hablante para revisar")
     if short_auto_splits >= 20:
@@ -3293,9 +3294,9 @@ def process_project(
                         num_speakers=num_speakers,
                     )
                 except Exception as exc:
-                    project["warnings"].append(f"Diarizacion omitida: {compact_error_message(exc)}")
+                    project["warnings"].append(f"Separacion de hablantes omitida: {compact_error_message(exc)}")
             else:
-                project["warnings"].append("Diarizacion no disponible. Revisa setup o requirements_diarization.txt.")
+                project["warnings"].append("Separacion de hablantes no disponible. Revisa setup o requirements_diarization.txt.")
 
         ensure_not_stopped(project_id)
         update_job(project_id, step="Preparando editor", progress=90, stage="editor", can_resume=False)
@@ -3406,17 +3407,17 @@ def start_processing_thread(
 
 def process_diarization_only(project_id: str, num_speakers: Optional[int]) -> None:
     try:
-        append_project_log(project_id, f"Iniciando diarizacion aislada. speakers={num_speakers or 'auto'}")
+        append_project_log(project_id, f"Iniciando separacion de hablantes aislada. speakers={num_speakers or 'auto'}")
         clear_stop_request(project_id)
         project = load_project(project_id)
         existing_labels = project.get("speaker_labels") or {}
         if not project.get("segments"):
-            raise RuntimeError("No hay segmentos transcritos para diarizar.")
+            raise RuntimeError("No hay segmentos transcritos para separar hablantes.")
         audio_path = project_media_path(project, "audio_path", "audio")
         if not audio_path or not audio_path.is_file():
-            raise RuntimeError("No hay WAV convertido para diarizar.")
+            raise RuntimeError("No hay WAV convertido para separar hablantes.")
         if not diarization_ready()["ready"]:
-            raise RuntimeError("Diarizacion no disponible. Revisa setup o requirements_diarization.txt.")
+            raise RuntimeError("Separacion de hablantes no disponible. Revisa setup o requirements_diarization.txt.")
 
         project["status"] = "processing"
         project["error"] = None
@@ -3466,13 +3467,13 @@ def process_diarization_only(project_id: str, num_speakers: Optional[int]) -> No
             project["status"] = "done" if project.get("segments") else "error"
             project["error"] = None if project.get("segments") else str(exc)
             warnings = clear_diarization_warnings(project.get("warnings") or [])
-            warnings.append(f"Diarizacion omitida: {compact_error_message(exc)}")
+            warnings.append(f"Separacion de hablantes omitida: {compact_error_message(exc)}")
             project["warnings"] = warnings
             project["updated_at"] = now_ms()
             save_project(project)
         except Exception:
             pass
-        update_job(project_id, status="done", step="Diarizacion omitida", progress=100)
+        update_job(project_id, status="done", step="Separacion de hablantes omitida", progress=100)
 
 
 def start_diarization_thread(project_id: str, num_speakers: Optional[int]) -> None:
@@ -3483,7 +3484,7 @@ def start_diarization_thread(project_id: str, num_speakers: Optional[int]) -> No
     project["error"] = None
     project["updated_at"] = now_ms()
     save_project(project)
-    update_job(project_id, status="queued", step="Preparando diarizacion", progress=0, started_at=now_ms(), stage="diarization", can_resume=True)
+    update_job(project_id, status="queued", step="Preparando separacion de hablantes", progress=0, started_at=now_ms(), stage="diarization", can_resume=True)
     thread = threading.Thread(
         target=process_diarization_only,
         args=(project_id, num_speakers),
@@ -4166,7 +4167,7 @@ def api_relabel_speakers(project_id: str, payload: Optional[RelabelRequest] = No
     if not segments:
         raise HTTPException(status_code=400, detail="No hay segmentos para reetiquetar.")
     if not turns:
-        raise HTTPException(status_code=400, detail="No hay diarizacion guardada para reetiquetar.")
+        raise HTTPException(status_code=400, detail="No hay separacion de hablantes guardada para reetiquetar.")
 
     existing_labels = project.get("speaker_labels") or {}
     segments, labels, _, diarization_warning = relabel_segments_with_diagnostics(
@@ -4357,7 +4358,26 @@ def find_available_port(host: str, preferred_port: int, attempts: int = 25) -> i
     raise RuntimeError(f"No encontre un puerto libre entre {preferred_port} y {preferred_port + attempts - 1}.")
 
 
+def configure_windows_event_loop_policy() -> None:
+    if platform.system() != "Windows":
+        return
+    selector_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+    if selector_policy is None:
+        return
+    if isinstance(asyncio.get_event_loop_policy(), selector_policy):
+        return
+    asyncio.set_event_loop_policy(selector_policy())
+
+
+def uvicorn_loop_name() -> str:
+    if platform.system() == "Windows":
+        return "none"
+    return "auto"
+
+
 def main() -> None:
+    configure_windows_event_loop_policy()
+
     import uvicorn
 
     port = find_available_port(HOST, PORT)
@@ -4367,7 +4387,7 @@ def main() -> None:
     print(f"Abriendo Transcriptor Mi Cami en {url}")
     if os.environ.get("TRANSCRIPTOR_NO_BROWSER") != "1":
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-    uvicorn.run("app.main:app", host=HOST, port=port, reload=False, access_log=False)
+    uvicorn.run("app.main:app", host=HOST, port=port, reload=False, access_log=False, loop=uvicorn_loop_name())
 
 
 if __name__ == "__main__":

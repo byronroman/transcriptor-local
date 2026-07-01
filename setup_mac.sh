@@ -87,9 +87,9 @@ VENV_PY=".venv/bin/python"
 "$VENV_PY" -m pip install --upgrade pip
 "$VENV_PY" -m pip install -r requirements.txt
 
-echo "Instalando diarizacion opcional..."
+echo "Instalando separacion de hablantes opcional..."
 if ! "$VENV_PY" -m pip install -r requirements_diarization.txt; then
-  echo "Aviso: sherpa-onnx no se pudo instalar. La app funcionara sin diarizacion automatica."
+  echo "Aviso: sherpa-onnx no se pudo instalar. La app funcionara sin separacion de hablantes automatica."
 fi
 
 echo "Descargando modelos para Mac: small, medium, large-v3-turbo, large-v3 q5_0 y large-v3 completo..."

@@ -59,9 +59,9 @@ En Windows:
 
 `medium` y `large-v3-turbo` son mejores, pero pueden ser muy lentos en un i3 sin GPU.
 
-## Diarizacion
+## Separacion de hablantes
 
-La diarizacion usa `sherpa-onnx`. Si esa dependencia no se instala en Windows, la app sigue funcionando como transcriptor/editor y marca todo como `SPEAKER_00`.
+La separacion de hablantes usa `sherpa-onnx`. Si esa dependencia no se instala en Windows, la app sigue funcionando como transcriptor/editor y marca todo como `SPEAKER_00`.
 
 Los hablantes siempre se pueden corregir y renombrar desde la interfaz:
 

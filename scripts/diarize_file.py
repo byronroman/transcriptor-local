@@ -81,7 +81,7 @@ def read_wav_info(path: Path) -> WavInfo:
             frames=wav.getnframes(),
         )
     if info.sample_width != 2:
-        raise RuntimeError("La diarizacion espera WAV PCM 16-bit.")
+        raise RuntimeError("La separacion de hablantes espera WAV PCM 16-bit.")
     return info
 
 
@@ -92,7 +92,7 @@ def read_wav_chunk_float32(path: Path, start_frame: int, frame_count: int) -> tu
         sample_width = wav.getsampwidth()
         total_frames = wav.getnframes()
         if sample_width != 2:
-            raise RuntimeError("La diarizacion espera WAV PCM 16-bit.")
+            raise RuntimeError("La separacion de hablantes espera WAV PCM 16-bit.")
         start_frame = max(0, min(start_frame, total_frames))
         frame_count = max(0, min(frame_count, total_frames - start_frame))
         wav.setpos(start_frame)
@@ -129,7 +129,7 @@ def build_diarizer(models_dir: Path, effective_speakers: int) -> tuple[sherpa_on
         min_duration_off=0.5,
     )
     if not config.validate():
-        raise RuntimeError("La configuracion de diarizacion no es valida.")
+        raise RuntimeError("La configuracion de separacion de hablantes no es valida.")
     return sherpa_onnx.OfflineSpeakerDiarization(config), segmentation_model
 
 
@@ -278,14 +278,14 @@ def run_chunk_worker(
     diarizer, _ = build_diarizer(models_dir, effective_speakers)
     info = read_wav_info(wav_path)
     if info.sample_rate != diarizer.sample_rate:
-        raise RuntimeError(f"Audio a {info.sample_rate} Hz, diarizacion espera {diarizer.sample_rate} Hz.")
+        raise RuntimeError(f"Audio a {info.sample_rate} Hz, separacion de hablantes espera {diarizer.sample_rate} Hz.")
 
     start_frame = int(round(read_start * info.sample_rate))
     end_frame = int(round(read_end * info.sample_rate))
     frame_count = max(0, end_frame - start_frame)
     audio, sample_rate = read_wav_chunk_float32(wav_path, start_frame, frame_count)
     if sample_rate != diarizer.sample_rate:
-        raise RuntimeError(f"Audio a {sample_rate} Hz, diarizacion espera {diarizer.sample_rate} Hz.")
+        raise RuntimeError(f"Audio a {sample_rate} Hz, separacion de hablantes espera {diarizer.sample_rate} Hz.")
 
     turns = diarize_array(diarizer, audio, read_start)
     output.write_text(json.dumps(turns, ensure_ascii=False), encoding="utf-8")
@@ -476,14 +476,14 @@ def main() -> int:
     write_manifest()
 
     log(
-        "INFO diarizacion chunked: "
+        "INFO separacion de hablantes chunked: "
         f"duracion={format_seconds(info.duration)} "
         f"chunk={int(chunk_seconds)}s overlap={overlap_seconds:.1f}s "
         f"speakers={effective_speakers} "
         f"isolated=1 "
         f"modelo={segmentation_model.name}"
     )
-    progress(0, "Preparando diarizacion por tramos")
+    progress(0, "Preparando separacion de hablantes por tramos")
 
     for chunk_index in range(total_chunks):
         chunk_start = chunk_index * chunk_seconds
@@ -555,7 +555,7 @@ def main() -> int:
         partial_output.unlink()
     except FileNotFoundError:
         pass
-    progress(100, f"Diarizacion terminada: {len(turns)} turnos")
+    progress(100, f"Separacion de hablantes terminada: {len(turns)} turnos")
     return 0
 
 
