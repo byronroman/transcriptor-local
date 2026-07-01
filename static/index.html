@@ -1,0 +1,630 @@
+<!doctype html>
+<html lang="es-CL">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Transcriptor Mi Cami</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=20260627-heart" />
+    <script>
+      (() => {
+        try {
+          const saved = localStorage.getItem("transcriptor.theme");
+          const prefersDark =
+            window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches;
+          document.documentElement.dataset.theme =
+            saved || (prefersDark ? "dark" : "light");
+        } catch (_) {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
+    <link
+      rel="stylesheet"
+      href="/static/styles.css?v=20260701-volume-popover"
+    />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Transcriptor Mi Cami</h1>
+        <p id="statusLine">Cargando estado...</p>
+      </div>
+      <div class="topbar-actions">
+        <button
+          id="sidebarToggleBtn"
+          class="secondary sidebar-toggle"
+          type="button"
+          aria-label="Contraer panel lateral"
+          title="Panel lateral"
+        >
+          <span aria-hidden="true">☰</span>
+        </button>
+        <button
+          id="themeToggleBtn"
+          class="secondary theme-toggle"
+          type="button"
+          aria-label="Modo oscuro"
+          title="Modo oscuro"
+        >
+          <span class="theme-icon" aria-hidden="true"></span>
+        </button>
+        <button id="refreshBtn" type="button">Actualizar</button>
+      </div>
+    </header>
+
+    <main id="appLayout" class="layout">
+      <aside id="sidebar" class="sidebar">
+        <button
+          id="sidebarCollapseBtn"
+          class="secondary sidebar-collapse-btn"
+          type="button"
+          aria-label="Contraer panel lateral"
+        >
+          <span aria-hidden="true">‹</span>
+          <span>Contraer panel</span>
+        </button>
+        <section
+          class="panel sidebar-panel"
+          data-panel="projects"
+          title="Proyectos"
+        >
+          <h2 data-icon="▣">Proyectos</h2>
+          <div id="projectList" class="project-list"></div>
+          <form id="importPackageForm" class="import-package-form">
+            <label class="form-field">
+              Importar paquete
+              <input
+                id="packageInput"
+                type="file"
+                name="package"
+                accept=".zip,.transcriptor.zip,application/zip"
+              />
+            </label>
+            <button id="importPackageBtn" class="secondary" type="submit">
+              Importar
+            </button>
+            <small id="importPackageStatus" class="import-package-status"></small>
+          </form>
+        </section>
+
+        <section
+          class="panel sidebar-panel"
+          data-panel="upload"
+          title="Nuevo audio"
+        >
+          <h2 data-icon="＋">Nuevo audio</h2>
+          <form id="uploadForm" class="upload-form">
+            <label class="form-field">
+              Archivo
+              <input
+                id="fileInput"
+                type="file"
+                name="file"
+                accept="audio/*,video/*"
+                required
+              />
+            </label>
+            <label class="form-field">
+              Modelo
+              <select id="modelSelect" name="model"></select>
+            </label>
+            <div id="modelHint" class="model-hint hidden" role="note"></div>
+            <div class="mode-block">
+              <label class="form-field">
+                Modo
+                <select id="profileSelect" name="profile">
+                  <option value="calidad">Calidad</option>
+                  <option value="seguro_windows">Seguro Windows</option>
+                  <option value="rapido">Rapido</option>
+                </select>
+              </label>
+              <div id="profileHint" class="model-hint profile-hint" role="note"></div>
+            </div>
+            <div class="diarization-row">
+              <label class="check">
+                <input id="diarizeInput" type="checkbox" checked />
+                <span>Separar hablantes</span>
+              </label>
+              <label class="voices-field">
+                Voces
+                <select id="speakersSelect">
+                  <option value="2" selected>2 voces</option>
+                  <option value="3">3 voces</option>
+                  <option value="4">4 voces</option>
+                </select>
+              </label>
+            </div>
+            <button id="transcribeBtn" type="submit">Transcribir</button>
+          </form>
+          <div id="jobBox" class="job hidden">
+            <div class="job-head">
+              <span id="jobText">Preparando...</span>
+              <strong id="jobPercent">0%</strong>
+            </div>
+            <div class="bar"><span id="jobBar"></span></div>
+          </div>
+        </section>
+
+        <details
+          id="diagnosticsPanel"
+          class="panel diagnostics-panel"
+          title="Diagnóstico"
+        >
+          <summary data-icon="✓">
+            <span>Diagnóstico</span>
+            <small id="diagnosticsSummary">Herramientas</small>
+          </summary>
+          <ul id="toolStatus" class="status-list"></ul>
+        </details>
+      </aside>
+
+      <section class="workspace">
+        <div id="emptyState" class="empty">
+          <h2>Sin proyecto abierto</h2>
+          <p>Sube un archivo o abre uno de la lista.</p>
+        </div>
+
+        <div id="loadingState" class="loading-screen hidden">
+          <div class="loading-card">
+            <div class="loading-top">
+              <span id="loadingBadge">Procesando</span>
+              <strong id="loadingPercent">0%</strong>
+            </div>
+            <div class="loading-bar"><span id="loadingBar"></span></div>
+            <h2 id="loadingTitle">Transcribiendo con Whisper</h2>
+            <p id="loadingDetail">Preparando archivo...</p>
+            <p id="loadingMeta">Tiempo transcurrido: 00:00</p>
+            <div class="loading-actions">
+              <button id="pauseJobBtn" class="secondary" type="button">
+                Pausar
+              </button>
+              <button id="resumeJobBtn" class="secondary hidden" type="button">
+                Reanudar
+              </button>
+              <button id="cancelJobBtn" class="danger" type="button">
+                Cancelar
+              </button>
+              <button
+                id="deleteLoadingProjectBtn"
+                class="danger secondary-danger hidden"
+                type="button"
+              >
+                Eliminar proyecto
+              </button>
+            </div>
+            <details class="log-panel">
+              <summary>Logs del proceso</summary>
+              <pre id="loadingLog">Sin logs todavía.</pre>
+            </details>
+          </div>
+        </div>
+
+        <div id="editor" class="editor hidden">
+          <div class="editor-head">
+            <div class="editor-title-block">
+              <input id="projectName" class="title-input" type="text" />
+            </div>
+            <div class="editor-action-cluster">
+              <details id="reviewDiagnostics" class="review-diagnostics">
+                <summary
+                  class="secondary review-diagnostics-trigger"
+                  aria-label="Avisos y logs"
+                >
+                  <span class="review-diagnostics-icon" aria-hidden="true">!</span>
+                  <span id="reviewDiagnosticsLabel">Diagnóstico</span>
+                </summary>
+                <div class="review-diagnostics-popover">
+                  <div id="warnings" class="warnings hidden"></div>
+                  <details class="log-panel editor-log">
+                    <summary>Logs del proceso</summary>
+                    <pre id="editorLog">Sin logs todavía.</pre>
+                  </details>
+                </div>
+              </details>
+              <button id="saveBtn" type="button">Guardar cambios</button>
+              <span id="saveState" class="editor-save-state"></span>
+              <details class="tools-menu">
+                <summary class="secondary tools-menu-trigger">
+                  Herramientas
+                </summary>
+                <div class="tools-menu-list">
+                  <label>
+                    Voces para diarizar
+                    <select id="editorSpeakersSelect">
+                      <option value="2" selected>2 voces</option>
+                      <option value="3">3 voces</option>
+                      <option value="4">4 voces</option>
+                    </select>
+                  </label>
+                  <button id="relabelProjectBtn" class="secondary" type="button">
+                    Reetiquetar hablantes
+                  </button>
+                  <button id="diarizeProjectBtn" class="secondary" type="button">
+                    Diarizar
+                  </button>
+                  <button
+                    id="reprocessProjectBtn"
+                    class="secondary"
+                    type="button"
+                  >
+                    Reprocesar audio
+                  </button>
+                </div>
+              </details>
+              <details class="export-menu">
+                <summary
+                  class="button export-menu-trigger"
+                  aria-label="Exportar"
+                >
+                  <span class="menu-icon" aria-hidden="true">☰</span>
+                  <span>Exportar</span>
+                </summary>
+                <div class="export-menu-list">
+                  <a id="exportTxt" href="#">TXT <small>Texto plano</small></a>
+                  <a id="exportDocx" href="#"
+                    >DOCX <small>Documento editable</small></a
+                  >
+                  <a id="exportDocxTs" href="#"
+                    >DOCX+T <small>Con timestamps</small></a
+                  >
+                  <a id="exportSrt" href="#">SRT <small>Subtitulos</small></a>
+                  <a id="exportVtt" href="#">VTT <small>Web captions</small></a>
+                  <a id="exportJson" href="#"
+                    >JSON <small>Datos completos</small></a
+                  >
+                  <a id="exportPackage" href="#"
+                    >Paquete completo <small>Para revisar en otro equipo</small></a
+                  >
+                  <a id="exportPackageLite" href="#"
+                    >Paquete liviano <small>Sin audio</small></a
+                  >
+                </div>
+              </details>
+              <button
+                id="deleteProjectBtn"
+                class="danger secondary-danger"
+                type="button"
+              >
+                Eliminar
+              </button>
+              <label
+                id="proofreadStatus"
+                class="proofread-switch proofread-disabled"
+                title="Corrector apagado"
+              >
+                <input
+                  id="proofreadToggleInput"
+                  type="checkbox"
+                  aria-label="Activar corrector"
+                />
+                <span class="proofread-switch-track" aria-hidden="true">
+                  <span class="proofread-switch-thumb"></span>
+                </span>
+                <span class="proofread-switch-label">Corrector</span>
+              </label>
+            </div>
+          </div>
+
+          <audio
+            id="audioPlayer"
+            class="native-audio"
+            preload="metadata"
+          ></audio>
+          <div
+            id="audioStickyBar"
+            class="audio-sticky"
+            aria-label="Controles rapidos de audio"
+          >
+            <div class="audio-sticky-controls">
+              <button id="audioBack30Btn" class="secondary" type="button">
+                -30s
+              </button>
+              <button id="audioBack5Btn" class="secondary" type="button">
+                -5s
+              </button>
+              <button
+                id="audioPlayPauseBtn"
+                class="icon-button"
+                type="button"
+                aria-label="Reproducir"
+                title="Reproducir"
+              >
+                ▶
+              </button>
+              <button id="audioForward5Btn" class="secondary" type="button">
+                +5s
+              </button>
+              <button id="audioForward30Btn" class="secondary" type="button">
+                +30s
+              </button>
+              <button
+                id="audioFollowBtn"
+                class="secondary audio-follow active"
+                type="button"
+              >
+                Seguir
+              </button>
+            </div>
+            <input
+              id="audioSeek"
+              class="audio-seek"
+              type="range"
+              min="0"
+              max="1000"
+              value="0"
+              step="1"
+              aria-label="Avance del audio"
+            />
+            <div class="audio-sticky-time">
+              <span id="audioCurrentTime">00:00:00</span>
+              <span>/</span>
+              <span id="audioDuration">00:00:00</span>
+            </div>
+            <div id="audioVolumeMenu" class="audio-volume-menu">
+              <button
+                id="audioVolumeBtn"
+                class="icon-button audio-volume-button"
+                type="button"
+                aria-label="Volumen"
+                aria-haspopup="dialog"
+                aria-expanded="false"
+                title="Volumen"
+              >
+                <span id="audioVolumeIcon" class="audio-volume-icon" aria-hidden="true"></span>
+              </button>
+              <div
+                id="audioVolumePopover"
+                class="audio-volume-popover hidden"
+                role="dialog"
+                aria-label="Control de volumen"
+              >
+                <div class="audio-volume-head">
+                  <span>Volumen</span>
+                  <strong id="audioVolumePercent">100%</strong>
+                </div>
+                <input
+                  id="audioVolume"
+                  type="range"
+                  min="0"
+                  max="100"
+                  value="100"
+                  step="1"
+                  aria-label="Volumen del audio"
+                />
+                <button id="audioMuteBtn" class="secondary" type="button" aria-pressed="false">
+                  Silenciar
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <section id="speakerPanel" class="speaker-panel">
+            <div class="speaker-head">
+              <div>
+                <h2>Hablantes</h2>
+                <p id="speakerSummaryText">Sin hablantes</p>
+              </div>
+              <div class="speaker-summary-actions">
+                <button
+                  id="speakerPanelToggleBtn"
+                  class="secondary"
+                  type="button"
+                >
+                  Editar
+                </button>
+              </div>
+            </div>
+            <div id="speakerPanelBody" class="speaker-panel-body">
+              <div class="speaker-actions">
+                <button id="addSpeakerBtn" class="secondary" type="button">
+                  Agregar hablante
+                </button>
+              </div>
+              <div id="speakerLabels" class="speaker-grid"></div>
+            </div>
+          </section>
+
+          <div id="segmentSelectionBar" class="segment-selection-bar hidden">
+            <span id="selectedSegmentsCount">0 seleccionados</span>
+            <button
+              id="mergeSelectedBtn"
+              class="secondary"
+              type="button"
+              disabled
+            >
+              Unir seleccionados
+            </button>
+            <button
+              id="deleteSelectedBtn"
+              class="danger secondary-danger"
+              type="button"
+              disabled
+            >
+              Borrar seleccionados
+            </button>
+            <button
+              id="clearSelectionBtn"
+              class="secondary"
+              type="button"
+              disabled
+            >
+              Limpiar selección
+            </button>
+          </div>
+
+          <div id="segments" class="segments"></div>
+        </div>
+        <button id="returnToAudioBtn" class="return-audio hidden" type="button">
+          Volver al audio
+        </button>
+        <div id="segmentUndoToast" class="segment-undo-toast hidden" role="status">
+          <span id="segmentUndoText">Segmento borrado</span>
+          <button id="undoSegmentDeleteBtn" class="secondary" type="button">
+            Deshacer
+          </button>
+          <button
+            id="dismissSegmentUndoBtn"
+            class="secondary undo-dismiss"
+            type="button"
+            aria-label="Ocultar deshacer"
+            title="Ocultar"
+          >
+            ×
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <div id="saveFailureOverlay" class="save-failure-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="saveFailureTitle">
+      <div class="save-failure-card">
+        <span class="save-failure-icon" aria-hidden="true">!</span>
+        <h2 id="saveFailureTitle">El guardado fallo</h2>
+        <p>
+          La edicion quedo bloqueada para evitar perder progreso. Reintenta el guardado antes de seguir corrigiendo la transcripcion.
+        </p>
+        <p id="saveFailureDraftStatus" class="save-failure-draft">Se intento guardar un borrador local en este navegador.</p>
+        <pre id="saveFailureDetail">Sin detalle disponible.</pre>
+        <div class="save-failure-actions">
+          <button id="retrySaveBtn" type="button">Reintentar guardado</button>
+          <button id="reloadAfterSaveFailureBtn" class="secondary" type="button">Recargar pagina</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="draftRestoreOverlay" class="save-failure-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="draftRestoreTitle">
+      <div class="save-failure-card draft-restore-card">
+        <span class="save-failure-icon draft-icon" aria-hidden="true">R</span>
+        <h2 id="draftRestoreTitle">Hay un borrador local</h2>
+        <p id="draftRestoreText">
+          Se encontro una version guardada en este navegador que podria tener cambios sin subir al servidor.
+        </p>
+        <pre id="draftRestoreDetail">Sin detalle disponible.</pre>
+        <div class="save-failure-actions">
+          <button id="restoreDraftBtn" type="button">Restaurar borrador</button>
+          <button id="keepServerDraftBtn" class="secondary" type="button">Mantener servidor</button>
+          <button id="discardDraftBtn" class="danger secondary-danger" type="button">Descartar borrador</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="saveConflictOverlay" class="save-failure-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="saveConflictTitle">
+      <div class="save-failure-card save-conflict-card">
+        <span class="save-failure-icon conflict-icon" aria-hidden="true">!</span>
+        <h2 id="saveConflictTitle">Hay cambios guardados desde otra ventana</h2>
+        <p>
+          La edicion quedo detenida para evitar sobrescribir una version mas reciente del proyecto.
+        </p>
+        <p id="saveConflictDraftStatus" class="save-failure-draft">Se intento guardar un borrador local en este navegador.</p>
+        <pre id="saveConflictDetail">Puedes recargar la version del servidor o conservar esta edicion como borrador local.</pre>
+        <div class="save-failure-actions">
+          <button id="keepLocalConflictBtn" type="button">Conservar mi borrador local</button>
+          <button id="reloadServerConflictBtn" class="secondary" type="button">Recargar version del servidor</button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="confirmDeleteSegmentOverlay"
+      class="confirm-overlay hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirmDeleteSegmentTitle"
+      aria-describedby="confirmDeleteSegmentText"
+    >
+      <div class="confirm-card">
+        <span class="confirm-icon" aria-hidden="true">!</span>
+        <div>
+          <h2 id="confirmDeleteSegmentTitle">Borrar segmento</h2>
+          <p id="confirmDeleteSegmentText">
+            Esta accion quitara este segmento de la transcripcion.
+          </p>
+          <p id="confirmDeleteSegmentMeta" class="confirm-meta"></p>
+        </div>
+        <div class="confirm-actions">
+          <button id="cancelDeleteSegmentBtn" class="secondary" type="button">
+            Cancelar
+          </button>
+          <button id="confirmDeleteSegmentBtn" class="danger" type="button">
+            Borrar segmento
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="importPreviewOverlay"
+      class="confirm-overlay import-preview-overlay hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="importPreviewTitle"
+      aria-describedby="importPreviewText"
+    >
+      <div class="confirm-card import-preview-card">
+        <span class="confirm-icon" aria-hidden="true">↧</span>
+        <div>
+          <h2 id="importPreviewTitle">Importar transcripción</h2>
+          <p id="importPreviewText">
+            Revisa el contenido del paquete antes de importarlo.
+          </p>
+          <div id="importPreviewMeta" class="import-preview-meta"></div>
+        </div>
+        <div class="confirm-actions">
+          <button id="cancelImportPreviewBtn" class="secondary" type="button">
+            Cancelar
+          </button>
+          <button
+            id="openExistingImportPreviewBtn"
+            class="secondary hidden"
+            type="button"
+          >
+            Abrir existente
+          </button>
+          <button id="confirmImportPreviewBtn" type="button">
+            Importar
+          </button>
+          <button
+            id="copyImportPreviewBtn"
+            class="hidden"
+            type="button"
+          >
+            Importar como copia
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="duplicateImportOverlay"
+      class="confirm-overlay duplicate-import-overlay hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="duplicateImportTitle"
+      aria-describedby="duplicateImportText"
+    >
+      <div class="confirm-card duplicate-import-card">
+        <span class="confirm-icon" aria-hidden="true">↺</span>
+        <div>
+          <h2 id="duplicateImportTitle">Paquete ya importado</h2>
+          <p id="duplicateImportText">
+            Este paquete parece estar importado en la app.
+          </p>
+          <p id="duplicateImportMeta" class="confirm-meta"></p>
+        </div>
+        <div class="confirm-actions">
+          <button id="cancelDuplicateImportBtn" class="secondary" type="button">
+            Cancelar
+          </button>
+          <button id="openDuplicateImportBtn" class="secondary" type="button">
+            Abrir existente
+          </button>
+          <button id="copyDuplicateImportBtn" type="button">
+            Importar como copia
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/static/app.js?v=20260701-volume-popover"></script>
+  </body>
+</html>
