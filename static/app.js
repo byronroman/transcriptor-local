@@ -1261,7 +1261,7 @@ function jobProgressMeta(job) {
     const stageLabels = {
       convert: "Conversion",
       whisper: "Whisper",
-      diarization: "Diarizacion",
+      diarization: "Separacion de hablantes",
       editor: "Editor",
       done: "Listo",
     };
@@ -1403,7 +1403,7 @@ function renderStatus() {
   const diagnosticsSummary = $("diagnosticsSummary");
   if (diagnosticsSummary) {
     const coreOk = Boolean(tools.ffmpeg && tools.whisper);
-    diagnosticsSummary.textContent = coreOk && diarization.ready ? "Herramientas OK" : coreOk ? "Diarizacion opcional" : "Revisar estado";
+    diagnosticsSummary.textContent = coreOk && diarization.ready ? "Herramientas OK" : coreOk ? "Separacion de hablantes opcional" : "Revisar estado";
   }
 
   const select = $("modelSelect");
@@ -3407,7 +3407,7 @@ function showImportPreviewModal(result) {
       ["Nombre", pkg.name || "Sin nombre"],
       ["Segmentos", `${Number(pkg.segments) || 0}`],
       ["Hablantes", `${Number(pkg.speakers) || 0}`],
-      ["Diarizacion", pkg.has_diarization ? "Incluida" : "No incluida"],
+      ["Separacion de hablantes", pkg.has_diarization ? "Incluida" : "No incluida"],
       ["Audio", pkg.has_audio ? `${pkg.audio_name || "Incluido"}${pkg.audio_bytes ? ` (${formatPackageBytes(pkg.audio_bytes)})` : ""}` : "No incluido"],
       ["Fecha", formatPackageDate(pkg.updated_at || pkg.created_at) || "Sin fecha"],
     ];
@@ -3623,7 +3623,7 @@ async function reprocessCurrentProject() {
 async function diarizeCurrentProject() {
   const projectId = state.current?.id;
   if (!projectId || isJobActive()) return;
-  const saved = await saveDirtyBeforeContinuing("Hay cambios sin guardar antes de re-diarizar.");
+  const saved = await saveDirtyBeforeContinuing("Hay cambios sin guardar antes de separar hablantes de nuevo.");
   if (!saved) return;
   const data = new FormData();
   data.append("speakers", $("editorSpeakersSelect")?.value || "2");
@@ -3631,7 +3631,7 @@ async function diarizeCurrentProject() {
   setTranscribeBusy(true);
   const result = await api(`/api/projects/${projectId}/diarize`, { method: "POST", body: data });
   state.activeJobId = result.id;
-  state.currentJob = { status: "queued", step: "Preparando diarizacion", progress: 0, started_at: Date.now() };
+  state.currentJob = { status: "queued", step: "Preparando separacion de hablantes", progress: 0, started_at: Date.now() };
   await openProject(result.id);
   pollJob(result.id);
 }
@@ -3640,7 +3640,7 @@ async function relabelCurrentProject() {
   const projectId = state.current?.id;
   if (!projectId || isJobActive()) return;
   if (!(state.current.diarization_turns || []).length) {
-    alert("Este proyecto no tiene diarizacion guardada para reetiquetar.");
+    alert("Este proyecto no tiene separacion de hablantes guardada para reetiquetar.");
     return;
   }
   const saved = await saveDirtyBeforeContinuing("Hay cambios sin guardar antes de reetiquetar hablantes.");

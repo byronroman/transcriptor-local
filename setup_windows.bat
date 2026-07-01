@@ -80,11 +80,11 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo Instalando diarizacion opcional...
+echo Instalando separacion de hablantes opcional...
 "%VENV_PY%" -m pip install -r requirements_diarization.txt
 if errorlevel 1 (
   echo.
-  echo Aviso: sherpa-onnx no se pudo instalar. La app funcionara sin diarizacion automatica.
+  echo Aviso: sherpa-onnx no se pudo instalar. La app funcionara sin separacion de hablantes automatica.
   echo Puedes volver a ejecutar setup_windows.bat mas tarde.
   echo.
 )

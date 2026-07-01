@@ -308,8 +308,8 @@ def main() -> int:
         try:
             install_diarization_models()
         except Exception as exc:
-            errors.append(f"diarizacion: {exc}")
-            log(f"Aviso: fallo diarizacion: {exc}")
+            errors.append(f"separacion de hablantes: {exc}")
+            log(f"Aviso: fallo separacion de hablantes: {exc}")
 
     if errors:
         log("\nSetup termino con avisos:")

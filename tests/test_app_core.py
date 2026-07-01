@@ -217,7 +217,7 @@ class CoreAppTests(unittest.TestCase):
         self.assertIn("Separacion de hablantes", warning)
         self.assertIn("se suavizo", warning)
         self.assertIn("quedan 24 cambios breves", warning)
-        self.assertNotIn("Diarizacion ruidosa", warning)
+        self.assertNotIn("Diarizacion", warning)
 
     def test_model_rank_prefers_full_large_v3_for_quality(self) -> None:
         ordered = sorted(
@@ -996,6 +996,32 @@ class CoreAppTests(unittest.TestCase):
         ):
             self.assertEqual(app_main.java_runtime_error(), "")
             activate_java_runtime.assert_called_once_with(Path(r"C:\Program Files\Eclipse Adoptium\bin\java.exe"))
+
+    def test_windows_event_loop_policy_uses_selector_when_available(self) -> None:
+        from app import main as app_main
+
+        class FakeSelectorPolicy:
+            pass
+
+        with (
+            mock.patch.object(app_main.platform, "system", return_value="Windows"),
+            mock.patch.object(app_main.asyncio, "WindowsSelectorEventLoopPolicy", FakeSelectorPolicy, create=True),
+            mock.patch.object(app_main.asyncio, "get_event_loop_policy", return_value=object()),
+            mock.patch.object(app_main.asyncio, "set_event_loop_policy") as set_policy,
+        ):
+            app_main.configure_windows_event_loop_policy()
+
+        set_policy.assert_called_once()
+        self.assertIsInstance(set_policy.call_args.args[0], FakeSelectorPolicy)
+
+    def test_uvicorn_loop_name_uses_policy_loop_on_windows(self) -> None:
+        from app import main as app_main
+
+        with mock.patch.object(app_main.platform, "system", return_value="Windows"):
+            self.assertEqual(app_main.uvicorn_loop_name(), "none")
+
+        with mock.patch.object(app_main.platform, "system", return_value="Darwin"):
+            self.assertEqual(app_main.uvicorn_loop_name(), "auto")
 
     def test_proofread_status_start_reports_java_error_immediately(self) -> None:
         from app import main as app_main
