@@ -642,6 +642,85 @@ class CoreAppTests(unittest.TestCase):
             self.assertTrue(info["has_audio"])
             self.assertEqual(info["audio_name"], "entrevista.wav")
 
+    def test_export_package_includes_browser_settings(self) -> None:
+        from app import main as app_main
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "settings.transcriptor.zip"
+            project = {
+                "id": "abc123abc123",
+                "name": "Con preferencias",
+                "segments": [{"start": 0, "end": 1, "speaker": "SPEAKER_00", "text": "hola"}],
+                "speaker_labels": {"SPEAKER_00": "Entrevistador/a"},
+            }
+            app_main.export_package(
+                project,
+                output_path,
+                include_audio=False,
+                browser_settings={
+                    "preferences": {
+                        "theme": "dark",
+                        "sidebarCollapsed": True,
+                        "speakersPanelOpen": False,
+                        "proofreadEnabled": True,
+                        "audioVolume": 1.5,
+                        "audioMuted": False,
+                        "draft": "no portable",
+                    }
+                },
+            )
+
+            with zipfile.ZipFile(output_path) as package:
+                names = package.namelist()
+                manifest = json.loads(package.read("manifest.json"))
+                settings = json.loads(package.read("settings/browser.json"))
+
+            self.assertIn("settings/browser.json", names)
+            self.assertEqual(manifest["settings"]["browser"]["path"], "settings/browser.json")
+            self.assertEqual(settings["format"], "transcriptor-local-browser-settings")
+            self.assertEqual(settings["preferences"]["theme"], "dark")
+            self.assertTrue(settings["preferences"]["sidebarCollapsed"])
+            self.assertEqual(settings["preferences"]["audioVolume"], 1.0)
+            self.assertNotIn("draft", settings["preferences"])
+
+    def test_package_browser_settings_are_reported_and_returned_on_import(self) -> None:
+        from app import main as app_main
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_projects_dir = app_main.PROJECTS_DIR
+            app_main.PROJECTS_DIR = Path(tmpdir) / "projects"  # type: ignore[assignment]
+            app_main.PROJECTS_DIR.mkdir(parents=True)
+            package_path = Path(tmpdir) / "settings-import.transcriptor.zip"
+            settings_payload = {
+                "format": "transcriptor-local-browser-settings",
+                "version": 1,
+                "preferences": {
+                    "theme": "light",
+                    "proofreadEnabled": False,
+                    "audioMuted": True,
+                    "audioVolume": 0.42,
+                },
+            }
+            try:
+                with zipfile.ZipFile(package_path, "w") as package:
+                    package.writestr(
+                        "project.json",
+                        json.dumps({"name": "Importada", "segments": [{"start": 0, "end": 1, "text": "hola"}]}),
+                    )
+                    package.writestr("manifest.json", json.dumps({"format": "transcriptor-local-package"}))
+                    package.writestr("settings/browser.json", json.dumps(settings_payload))
+
+                info = inspect_project_package(package_path)
+                imported = import_project_package(package_path, package_info=info)
+                saved = json.loads((app_main.PROJECTS_DIR / imported["id"] / "project.json").read_text(encoding="utf-8"))
+
+                self.assertTrue(info["has_browser_settings"])
+                self.assertEqual(info["browser_settings"]["preferences"]["audioVolume"], 0.42)
+                self.assertEqual(imported["browser_settings"]["preferences"]["theme"], "light")
+                self.assertNotIn("browser_settings", saved)
+            finally:
+                app_main.PROJECTS_DIR = original_projects_dir  # type: ignore[assignment]
+
     def test_inspect_project_package_validates_segments_before_preview(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             package_path = Path(tmpdir) / "bad-preview.transcriptor.zip"

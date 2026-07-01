@@ -54,6 +54,7 @@ const state = {
   proofreadBatchInFlight: false,
   proofreadCache: {},
   proofreadObserver: null,
+  browserDefaultPreferences: null,
   segmentVirtualStart: 0,
   segmentVirtualEnd: 0,
   segmentVirtualHeight: 108,
@@ -67,6 +68,8 @@ const SPEAKERS_PANEL_STORAGE_KEY = "transcriptor.speakersPanelOpen";
 const PROOFREAD_ENABLED_STORAGE_KEY = "transcriptor.proofreadEnabled.v2";
 const AUDIO_VOLUME_STORAGE_KEY = "transcriptor.audioVolume";
 const AUDIO_MUTED_STORAGE_KEY = "transcriptor.audioMuted";
+const BROWSER_SETTINGS_FORMAT = "transcriptor-local-browser-settings";
+const PROJECT_PREFERENCES_PREFIX = "transcriptor.projectPreferences.";
 const DRAFT_DB_NAME = "transcriptor-drafts";
 const DRAFT_DB_VERSION = 1;
 const DRAFT_STORE_NAME = "drafts";
@@ -168,13 +171,7 @@ function updateThemeButton() {
 function setTheme(theme, options = {}) {
   const next = theme === "dark" ? "dark" : "light";
   document.documentElement.dataset.theme = next;
-  if (options.persist !== false) {
-    try {
-      localStorage.setItem(THEME_STORAGE_KEY, next);
-    } catch (_) {
-      // Ignore storage failures.
-    }
-  }
+  if (options.persist !== false) persistBrowserPreferenceState();
   updateThemeButton();
   if (state.current?.status === "done") {
     renderSpeakerLabels();
@@ -216,6 +213,131 @@ function writeStoredBool(key, value) {
   }
 }
 
+function currentBrowserPreferences() {
+  return {
+    theme: currentTheme(),
+    sidebarCollapsed: Boolean(state.sidebarCollapsed),
+    speakersPanelOpen: Boolean(state.speakersPanelOpen),
+    proofreadEnabled: Boolean(state.proofreadEnabled),
+    audioVolume: Math.max(0, Math.min(1, Number(state.audioVolume) || 0)),
+    audioMuted: Boolean(state.audioMuted),
+  };
+}
+
+function browserSettingsPayload(preferences = currentBrowserPreferences()) {
+  return {
+    format: BROWSER_SETTINGS_FORMAT,
+    version: 1,
+    exported_at: Date.now(),
+    preferences,
+  };
+}
+
+function normalizeBrowserPreferences(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  const source = payload.preferences && typeof payload.preferences === "object" ? payload.preferences : payload;
+  const preferences = {};
+  if (source.theme === "dark" || source.theme === "light") preferences.theme = source.theme;
+  for (const key of ["sidebarCollapsed", "speakersPanelOpen", "proofreadEnabled", "audioMuted"]) {
+    if (typeof source[key] === "boolean") preferences[key] = source[key];
+  }
+  if (source.audioVolume !== undefined) {
+    const volume = Number(source.audioVolume);
+    if (Number.isFinite(volume)) preferences.audioVolume = Math.max(0, Math.min(1, volume));
+  }
+  return Object.keys(preferences).length ? preferences : null;
+}
+
+function projectPreferencesKey(projectId) {
+  return projectId ? `${PROJECT_PREFERENCES_PREFIX}${projectId}` : "";
+}
+
+function readProjectBrowserPreferences(projectId) {
+  const key = projectPreferencesKey(projectId);
+  if (!key) return null;
+  try {
+    return normalizeBrowserPreferences(JSON.parse(localStorage.getItem(key) || "null"));
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeProjectBrowserPreferences(projectId, payload = currentBrowserPreferences()) {
+  const key = projectPreferencesKey(projectId);
+  const preferences = normalizeBrowserPreferences(payload);
+  if (!key || !preferences) return false;
+  try {
+    localStorage.setItem(key, JSON.stringify(browserSettingsPayload(preferences)));
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function removeProjectBrowserPreferences(projectId) {
+  const key = projectPreferencesKey(projectId);
+  if (!key) return;
+  try {
+    localStorage.removeItem(key);
+  } catch (_) {
+    // Ignore storage failures.
+  }
+}
+
+function writeGlobalBrowserPreferences() {
+  const preferences = currentBrowserPreferences();
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, preferences.theme);
+  } catch (_) {
+    // Ignore storage failures.
+  }
+  state.sidebarPreference = preferences.sidebarCollapsed;
+  writeStoredBool(SIDEBAR_STORAGE_KEY, preferences.sidebarCollapsed);
+  writeStoredBool(SPEAKERS_PANEL_STORAGE_KEY, preferences.speakersPanelOpen);
+  writeStoredBool(PROOFREAD_ENABLED_STORAGE_KEY, preferences.proofreadEnabled);
+  writeStoredAudioVolume(preferences.audioVolume);
+  writeStoredAudioMuted(preferences.audioMuted);
+  state.browserDefaultPreferences = preferences;
+}
+
+function persistBrowserPreferenceState() {
+  if (state.current?.id) {
+    writeProjectBrowserPreferences(state.current.id);
+    return;
+  }
+  writeGlobalBrowserPreferences();
+}
+
+function applyBrowserPreferences(payload) {
+  const preferences = normalizeBrowserPreferences(payload);
+  if (!preferences) return null;
+  if (preferences.theme) setTheme(preferences.theme, { persist: false });
+  if (Object.prototype.hasOwnProperty.call(preferences, "sidebarCollapsed")) {
+    setSidebarCollapsed(preferences.sidebarCollapsed, { persist: false });
+  }
+  if (Object.prototype.hasOwnProperty.call(preferences, "speakersPanelOpen")) {
+    setSpeakersPanelOpen(preferences.speakersPanelOpen, { persist: false });
+  }
+  if (Object.prototype.hasOwnProperty.call(preferences, "proofreadEnabled")) {
+    setProofreadEnabled(preferences.proofreadEnabled, { persist: false });
+  }
+  if (Object.prototype.hasOwnProperty.call(preferences, "audioVolume")) {
+    setAudioVolume(preferences.audioVolume, { persist: false });
+  }
+  if (Object.prototype.hasOwnProperty.call(preferences, "audioMuted")) {
+    state.audioMuted = preferences.audioMuted;
+    applyAudioVolume();
+  }
+  return preferences;
+}
+
+function applyProjectBrowserPreferences(projectId) {
+  const preferences = readProjectBrowserPreferences(projectId);
+  if (preferences) return applyBrowserPreferences(preferences);
+  if (state.browserDefaultPreferences) applyBrowserPreferences(state.browserDefaultPreferences);
+  return null;
+}
+
 function applySidebarState() {
   const layout = $("appLayout");
   const sidebar = $("sidebar");
@@ -242,10 +364,7 @@ function applySidebarState() {
 
 function setSidebarCollapsed(collapsed, options = {}) {
   state.sidebarCollapsed = Boolean(collapsed);
-  if (options.persist !== false) {
-    state.sidebarPreference = state.sidebarCollapsed;
-    writeStoredBool(SIDEBAR_STORAGE_KEY, state.sidebarCollapsed);
-  }
+  if (options.persist !== false) persistBrowserPreferenceState();
   applySidebarState();
 }
 
@@ -270,7 +389,7 @@ function applySpeakersPanelState() {
 
 function setSpeakersPanelOpen(open, options = {}) {
   state.speakersPanelOpen = Boolean(open);
-  if (options.persist !== false) writeStoredBool(SPEAKERS_PANEL_STORAGE_KEY, state.speakersPanelOpen);
+  if (options.persist !== false) persistBrowserPreferenceState();
   applySpeakersPanelState();
 }
 
@@ -297,7 +416,7 @@ function applyProofreadEnabledState() {
 
 function setProofreadEnabled(enabled, options = {}) {
   state.proofreadEnabled = Boolean(enabled);
-  if (options.persist !== false) writeStoredBool(PROOFREAD_ENABLED_STORAGE_KEY, state.proofreadEnabled);
+  if (options.persist !== false) persistBrowserPreferenceState();
   state.proofreadStarting = state.proofreadEnabled;
   if (!state.proofreadEnabled) {
     state.proofreadStatus = "idle";
@@ -321,6 +440,10 @@ function initUiPreferences() {
   applySidebarState();
   applySpeakersPanelState();
   applyProofreadEnabledState();
+}
+
+function collectPortableBrowserSettings() {
+  return browserSettingsPayload(currentBrowserPreferences());
 }
 
 function setDirty(dirty) {
@@ -1049,10 +1172,7 @@ function setAudioVolume(value, options = {}) {
     state.audioMuted = true;
   }
   applyAudioVolume();
-  if (options.persist !== false) {
-    writeStoredAudioVolume(state.audioVolume);
-    writeStoredAudioMuted(state.audioMuted);
-  }
+  if (options.persist !== false) persistBrowserPreferenceState();
 }
 
 function toggleAudioMute() {
@@ -1066,8 +1186,7 @@ function toggleAudioMute() {
     state.audioMuted = true;
   }
   applyAudioVolume();
-  writeStoredAudioVolume(state.audioVolume);
-  writeStoredAudioMuted(state.audioMuted);
+  persistBrowserPreferenceState();
 }
 
 function initAudioVolume() {
@@ -1219,6 +1338,12 @@ async function saveBeforePackageExport() {
   return true;
 }
 
+function packageExportUrlWithBrowserSettings(href) {
+  const url = new URL(href, window.location.origin);
+  url.searchParams.set("browser_settings", JSON.stringify(collectPortableBrowserSettings()));
+  return url.toString();
+}
+
 async function exportPackageAfterSave(event, linkId) {
   event.preventDefault();
   const link = $(linkId);
@@ -1229,7 +1354,7 @@ async function exportPackageAfterSave(event, linkId) {
   try {
     const saved = await saveBeforePackageExport();
     if (!saved) return;
-    window.location.href = link.href;
+    window.location.href = packageExportUrlWithBrowserSettings(link.href);
   } finally {
     delete link.dataset.exporting;
     link.removeAttribute("aria-busy");
@@ -1788,9 +1913,12 @@ async function openProject(projectId) {
   state.autosaveQueued = false;
   clearProofreadState();
   loadSegmentUndoStack(projectId);
+  const projectPreferences = applyProjectBrowserPreferences(projectId);
   renderProjects();
   renderEditor();
-  syncSidebarDefaultForCurrent();
+  if (!projectPreferences || !Object.prototype.hasOwnProperty.call(projectPreferences, "sidebarCollapsed")) {
+    syncSidebarDefaultForCurrent();
+  }
   setDirty(false);
   await maybeOfferDraftRestore(projectId);
 }
@@ -3409,6 +3537,7 @@ function showImportPreviewModal(result) {
       ["Hablantes", `${Number(pkg.speakers) || 0}`],
       ["Separacion de hablantes", pkg.has_diarization ? "Incluida" : "No incluida"],
       ["Audio", pkg.has_audio ? `${pkg.audio_name || "Incluido"}${pkg.audio_bytes ? ` (${formatPackageBytes(pkg.audio_bytes)})` : ""}` : "No incluido"],
+      ["Preferencias", pkg.has_browser_settings ? "Incluidas" : "No incluidas"],
       ["Fecha", formatPackageDate(pkg.updated_at || pkg.created_at) || "Sin fecha"],
     ];
     if (result.duplicate) {
@@ -3469,9 +3598,10 @@ async function importSelectedPackage(duplicateMode = "ask") {
       if (status) status.textContent = "Paquete ya importado.";
       return;
     }
+    const storedSettings = writeProjectBrowserPreferences(result.id, result.browser_settings);
     if (input) input.value = "";
     if (status) {
-      status.textContent = "Importado";
+      status.textContent = storedSettings ? "Importado con preferencias" : "Importado";
       status.classList.add("ok");
     }
     await loadProjects();
@@ -3678,6 +3808,7 @@ async function deleteProject(projectId = state.current?.id, projectName = state.
   }
   await api(`/api/projects/${projectId}`, { method: "DELETE" });
   removeStoredPlaybackPosition(projectId);
+  removeProjectBrowserPreferences(projectId);
   if (state.current?.id === projectId) {
     state.current = null;
     state.currentJob = null;
@@ -3712,6 +3843,7 @@ async function init() {
   initTheme();
   initUiPreferences();
   initAudioVolume();
+  state.browserDefaultPreferences = currentBrowserPreferences();
   if (state.proofreadEnabled) loadProofreadStatus({ start: true }).catch(() => {});
   on("themeToggleBtn", "click", () => {
     setTheme(currentTheme() === "dark" ? "light" : "dark");

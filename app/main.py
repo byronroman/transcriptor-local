@@ -51,6 +51,7 @@ LANGUAGETOOL_JAR_PATTERNS = (
 MAX_IMPORT_PACKAGE_BYTES = int(os.environ.get("MAX_IMPORT_PACKAGE_BYTES", str(2_200_000_000)))
 MAX_PACKAGE_MEMBERS = int(os.environ.get("MAX_PACKAGE_MEMBERS", "32"))
 MAX_PACKAGE_JSON_BYTES = int(os.environ.get("MAX_PACKAGE_JSON_BYTES", str(50_000_000)))
+MAX_BROWSER_SETTINGS_BYTES = int(os.environ.get("MAX_BROWSER_SETTINGS_BYTES", str(32_000)))
 MAX_PACKAGE_DIAGNOSTIC_BYTES = int(os.environ.get("MAX_PACKAGE_DIAGNOSTIC_BYTES", str(50_000_000)))
 MAX_PACKAGE_AUDIO_BYTES = int(os.environ.get("MAX_PACKAGE_AUDIO_BYTES", str(2_000_000_000)))
 MAX_UPLOAD_AUDIO_BYTES = int(os.environ.get("MAX_UPLOAD_AUDIO_BYTES", str(2_200_000_000)))
@@ -64,6 +65,8 @@ ALLOWED_PACKAGE_DIAGNOSTICS = {
     "diarization_turns.json",
     "process.log",
 }
+BROWSER_SETTINGS_MEMBER = "settings/browser.json"
+BROWSER_SETTINGS_FORMAT = "transcriptor-local-browser-settings"
 ALLOWED_IMPORT_AUDIO_SUFFIXES = {
     ".aac",
     ".aiff",
@@ -3577,6 +3580,8 @@ def safe_zip_member(name: str) -> str:
 def package_member_allowed(member: str) -> bool:
     if member in {"project.json", "manifest.json"}:
         return True
+    if member == BROWSER_SETTINGS_MEMBER:
+        return True
     parts = member.split("/")
     if len(parts) != 2:
         return False
@@ -3616,6 +3621,70 @@ def validated_package_entries(package: zipfile.ZipFile) -> dict[str, zipfile.Zip
     return entries
 
 
+def normalize_browser_settings(payload: Any) -> Optional[dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return None
+    preferences_obj = payload.get("preferences") if isinstance(payload.get("preferences"), dict) else payload
+    if not isinstance(preferences_obj, dict):
+        return None
+    preferences: dict[str, Any] = {str(key): value for key, value in preferences_obj.items()}
+
+    normalized: dict[str, Any] = {}
+    theme = str(preferences.get("theme") or "").strip().lower()
+    if theme in {"dark", "light"}:
+        normalized["theme"] = theme
+
+    for key in ("sidebarCollapsed", "speakersPanelOpen", "proofreadEnabled", "audioMuted"):
+        value = preferences.get(key)
+        if isinstance(value, bool):
+            normalized[key] = value
+
+    if "audioVolume" in preferences:
+        raw_volume = preferences.get("audioVolume")
+        try:
+            volume = float(raw_volume) if raw_volume is not None else math.nan
+        except (TypeError, ValueError):
+            volume = math.nan
+        if math.isfinite(volume):
+            normalized["audioVolume"] = round(max(0.0, min(1.0, volume)), 3)
+
+    if not normalized:
+        return None
+    result: dict[str, Any] = {
+        "format": BROWSER_SETTINGS_FORMAT,
+        "version": 1,
+        "preferences": normalized,
+    }
+    exported_at = payload.get("exported_at")
+    if isinstance(exported_at, (int, float)) and math.isfinite(float(exported_at)) and exported_at > 0:
+        result["exported_at"] = int(exported_at)
+    return result
+
+
+def parse_browser_settings_param(raw: str = "") -> Optional[dict[str, Any]]:
+    if not raw:
+        return None
+    if len(raw.encode("utf-8")) > MAX_BROWSER_SETTINGS_BYTES:
+        raise HTTPException(status_code=400, detail="Las preferencias del navegador son demasiado grandes.")
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Preferencias del navegador invalidas.") from exc
+    return normalize_browser_settings(payload)
+
+
+def read_package_browser_settings(
+    package: zipfile.ZipFile,
+    entries: dict[str, zipfile.ZipInfo],
+) -> Optional[dict[str, Any]]:
+    info = entries.get(BROWSER_SETTINGS_MEMBER)
+    if not info:
+        return None
+    if info.file_size > MAX_BROWSER_SETTINGS_BYTES:
+        raise HTTPException(status_code=400, detail="Paquete invalido: preferencias del navegador demasiado grandes.")
+    return normalize_browser_settings(read_package_json(package, entries, BROWSER_SETTINGS_MEMBER))
+
+
 def portable_project(project: dict[str, Any]) -> dict[str, Any]:
     portable = json.loads(json.dumps(project, ensure_ascii=False))
     portable["portable_format"] = "transcriptor-local-project"
@@ -3649,9 +3718,15 @@ def add_file_if_exists(package: zipfile.ZipFile, path: Path, arcname: str) -> bo
     return False
 
 
-def export_package(project: dict[str, Any], output_path: Path, include_audio: bool = True) -> None:
+def export_package(
+    project: dict[str, Any],
+    output_path: Path,
+    include_audio: bool = True,
+    browser_settings: Optional[dict[str, Any]] = None,
+) -> None:
     pdir = project_dir(project["id"])
     portable = portable_project(project)
+    normalized_browser_settings = normalize_browser_settings(browser_settings) if browser_settings else None
     manifest: dict[str, Any] = {
         "format": "transcriptor-local-package",
         "version": 1,
@@ -3666,6 +3741,13 @@ def export_package(project: dict[str, Any], output_path: Path, include_audio: bo
         },
         "audio": None,
     }
+    if normalized_browser_settings:
+        manifest["settings"] = {
+            "browser": {
+                "path": BROWSER_SETTINGS_MEMBER,
+                "preferences": sorted(normalized_browser_settings["preferences"].keys()),
+            }
+        }
 
     with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as package:
         if include_audio:
@@ -3682,6 +3764,11 @@ def export_package(project: dict[str, Any], output_path: Path, include_audio: bo
 
         package.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
         package.writestr("project.json", json.dumps(portable, ensure_ascii=False, indent=2))
+        if normalized_browser_settings:
+            package.writestr(
+                BROWSER_SETTINGS_MEMBER,
+                json.dumps(normalized_browser_settings, ensure_ascii=False, indent=2),
+            )
 
         for filename in (
             "whisper_quality.json",
@@ -3754,6 +3841,7 @@ def inspect_project_package(package_path: Path) -> dict[str, Any]:
         manifest_audio = manifest.get("audio") if isinstance(manifest.get("audio"), dict) else {}
         audio_member = safe_zip_member(str(manifest_audio.get("path") or "")) if manifest_audio.get("path") else ""
         audio_entry = entries.get(audio_member) if audio_member else None
+        browser_settings = read_package_browser_settings(package, entries)
     original_id = project.get("original_id") or project.get("id")
     return {
         "original_id": str(original_id or ""),
@@ -3764,6 +3852,8 @@ def inspect_project_package(package_path: Path) -> dict[str, Any]:
         "speakers": len(labels) or len({str(segment.get("speaker") or "") for segment in segments if isinstance(segment, dict)}),
         "has_diarization": bool(turns or manifest_project.get("has_diarization")),
         "has_audio": bool(audio_entry),
+        "has_browser_settings": bool(browser_settings),
+        "browser_settings": browser_settings,
         "audio_name": str(manifest_audio.get("source_name") or Path(audio_member).name) if audio_member else "",
         "audio_bytes": int(audio_entry.file_size) if audio_entry else 0,
         "created_at": project.get("created_at") or manifest.get("created_at"),
@@ -3863,6 +3953,7 @@ def import_project_package(package_path: Path, package_info: Optional[dict[str, 
         project = read_package_json(package, entries, "project.json")
         manifest = read_package_json(package, entries, "manifest.json") if "manifest.json" in entries else {}
         normalize_imported_segments(project)
+        browser_settings = (package_info or {}).get("browser_settings") or read_package_browser_settings(package, entries)
         manifest_audio = manifest.get("audio") if isinstance(manifest.get("audio"), dict) else {}
         audio_info = manifest_audio
         audio_member = safe_zip_member(str(audio_info.get("path") or "")) if audio_info.get("path") else ""
@@ -3905,6 +3996,8 @@ def import_project_package(package_path: Path, package_info: Optional[dict[str, 
 
             save_project(project)
             append_project_log(project_id, f"Proyecto importado desde paquete portable. Original: {original_id or 'desconocido'}.")
+            if browser_settings:
+                project["browser_settings"] = browser_settings
             return project
         except Exception:
             shutil.rmtree(pdir, ignore_errors=True)
@@ -4023,13 +4116,15 @@ async def api_import_package(file: UploadFile = File(...), duplicate_mode: str =
                     "speakers": package_info.get("speakers"),
                     "has_diarization": package_info.get("has_diarization"),
                     "has_audio": package_info.get("has_audio"),
+                    "has_browser_settings": package_info.get("has_browser_settings"),
                     "audio_name": package_info.get("audio_name"),
                     "audio_bytes": package_info.get("audio_bytes"),
                     "updated_at": package_info.get("updated_at"),
                 },
             }
         project = import_project_package(temp_path, package_info=package_info, copy_name=duplicate_mode == "copy" and duplicate is not None)
-        return {"id": project["id"], "status": project.get("status"), "project": project}
+        browser_settings = project.pop("browser_settings", None)
+        return {"id": project["id"], "status": project.get("status"), "project": project, "browser_settings": browser_settings}
     finally:
         temp_path.unlink(missing_ok=True)
 
@@ -4053,6 +4148,7 @@ async def api_import_package_inspect(file: UploadFile = File(...)) -> dict[str, 
                 "speakers": package_info.get("speakers"),
                 "has_diarization": package_info.get("has_diarization"),
                 "has_audio": package_info.get("has_audio"),
+                "has_browser_settings": package_info.get("has_browser_settings"),
                 "audio_name": package_info.get("audio_name"),
                 "audio_bytes": package_info.get("audio_bytes"),
                 "created_at": package_info.get("created_at"),
@@ -4265,7 +4361,7 @@ def api_audio(project_id: str) -> FileResponse:
 
 
 @app.get("/api/projects/{project_id}/export/{fmt}")
-def api_export(project_id: str, fmt: str, audio: str = "true") -> Response:
+def api_export(project_id: str, fmt: str, audio: str = "true", browser_settings: str = "") -> Response:
     project_id = validate_project_id(project_id)
     project = load_project(project_id)
     safe_name = clean_filename(project.get("name") or "transcripcion")
@@ -4273,7 +4369,11 @@ def api_export(project_id: str, fmt: str, audio: str = "true") -> Response:
         include_audio = fmt == "package" and truthy_param(audio)
         suffix = "" if include_audio else "_sin_audio"
         output_path = safe_export_path(project_id, f"{suffix}.transcriptor.zip")
-        write_export_atomically(output_path, lambda tmp: export_package(project, tmp, include_audio=include_audio))
+        settings = parse_browser_settings_param(browser_settings)
+        write_export_atomically(
+            output_path,
+            lambda tmp: export_package(project, tmp, include_audio=include_audio, browser_settings=settings),
+        )
         return FileResponse(
             output_path,
             media_type="application/zip",
