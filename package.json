@@ -1,0 +1,21 @@
+{
+  "name": "transcriptor-local",
+  "version": "1.0.0",
+  "private": true,
+  "description": "App local para transcribir entrevistas en el navegador usando herramientas instaladas en la misma carpeta.",
+  "scripts": {
+    "test:e2e": "playwright test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/byronroman/transcriptor-local.git"
+  },
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/byronroman/transcriptor-local/issues"
+  },
+  "homepage": "https://github.com/byronroman/transcriptor-local#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.61.1"
+  }
+}
