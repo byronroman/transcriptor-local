@@ -15,6 +15,7 @@ export const state = {
   audioVolume: 1,
   audioMuted: false,
   previousAudioVolume: 1,
+  audioPlaybackRate: 1,
   audioVolumePopoverOpen: false,
   programmaticScrollUntil: 0,
   autosaveTimer: null,

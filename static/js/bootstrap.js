@@ -17,6 +17,7 @@ export async function initApp() {
   initTheme();
   initUiPreferences();
   initAudioVolume();
+  initAudioPlaybackRate();
   state.browserDefaultPreferences = currentBrowserPreferences();
   if (state.proofreadEnabled) loadProofreadStatus({ start: true }).catch(() => {});
   on("themeToggleBtn", "click", () => {
@@ -305,6 +306,10 @@ export async function initApp() {
   on("audioVolume", "change", (event) => {
     setAudioVolume(Number(event.target?.value) / 100);
   });
+  on("audioPlaybackRate", "change", (event) => {
+    setAudioPlaybackRate(event.target?.value);
+    updateStickyAudioControls();
+  });
   on("audioVolumeBtn", "click", (event) => {
     event.stopPropagation();
     setAudioVolumePopoverOpen(!state.audioVolumePopoverOpen);
@@ -328,13 +333,16 @@ export async function initApp() {
   on("returnToAudioBtn", "click", () => {
     scrollToActiveAudioSegment();
   });
+  on("returnToTopBtn", "click", () => {
+    scrollToProjectStart();
+  });
   window.addEventListener("scroll", () => {
     scheduleSegmentWindowRender();
-    updateReturnToAudioButton();
+    updateQuickScrollButtons();
   }, { passive: true });
   window.addEventListener("resize", () => {
     scheduleSegmentWindowRender();
-    updateReturnToAudioButton();
+    updateQuickScrollButtons();
   });
   window.addEventListener("wheel", pauseAudioFollowFromUser, { passive: true });
   window.addEventListener("touchmove", pauseAudioFollowFromUser, { passive: true });

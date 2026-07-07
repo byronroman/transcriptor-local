@@ -88,6 +88,47 @@ function writeStoredAudioMuted(muted) {
   }
 }
 
+function normalizeAudioPlaybackRate(value) {
+  const allowed = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+  if (value === null || value === undefined || value === "") return 1;
+  const rate = Number(value);
+  if (!Number.isFinite(rate)) return 1;
+  return allowed.reduce((best, option) =>
+    Math.abs(option - rate) < Math.abs(best - rate) ? option : best
+  );
+}
+
+function readStoredAudioPlaybackRate() {
+  try {
+    return normalizeAudioPlaybackRate(localStorage.getItem(AUDIO_PLAYBACK_RATE_STORAGE_KEY));
+  } catch (_) {
+    return 1;
+  }
+}
+
+function writeStoredAudioPlaybackRate(rate) {
+  try {
+    localStorage.setItem(AUDIO_PLAYBACK_RATE_STORAGE_KEY, String(normalizeAudioPlaybackRate(rate)));
+  } catch (_) {
+    // Ignore storage failures.
+  }
+}
+
+function applyAudioPlaybackRate() {
+  const rate = normalizeAudioPlaybackRate(state.audioPlaybackRate);
+  state.audioPlaybackRate = rate;
+  const player = $("audioPlayer");
+  if (player) player.playbackRate = rate;
+  const select = $("audioPlaybackRate");
+  if (select) select.value = String(rate);
+}
+
+function setAudioPlaybackRate(value, options = {}) {
+  state.audioPlaybackRate = normalizeAudioPlaybackRate(value);
+  applyAudioPlaybackRate();
+  if (options.persist !== false) persistBrowserPreferenceState();
+}
+
 function setAudioVolumePopoverOpen(open) {
   state.audioVolumePopoverOpen = Boolean(open);
   const menu = $("audioVolumeMenu");
@@ -166,6 +207,11 @@ function initAudioVolume() {
   state.previousAudioVolume = state.audioVolume > 0 ? state.audioVolume : 1;
   state.audioMuted = readStoredAudioMuted();
   applyAudioVolume();
+}
+
+function initAudioPlaybackRate() {
+  state.audioPlaybackRate = readStoredAudioPlaybackRate();
+  applyAudioPlaybackRate();
 }
 
 function currentPlaybackPosition() {
@@ -316,13 +362,14 @@ function updateStickyAudioControls() {
     seek.value = duration ? String(Math.round((current / duration) * 1000)) : "0";
   }
   applyAudioVolume();
+  applyAudioPlaybackRate();
   const follow = $("audioFollowBtn");
   if (follow) {
     follow.textContent = state.audioFollow ? "Siguiendo" : "Seguir";
     follow.classList.toggle("active", state.audioFollow);
     follow.title = state.audioFollow ? "Desactivar seguimiento automatico" : "Seguir segmento actual";
   }
-  for (const id of ["audioBack30Btn", "audioBack5Btn", "audioPlayPauseBtn", "audioForward5Btn", "audioForward30Btn", "audioSeek", "audioFollowBtn", "audioVolumeBtn", "audioVolume", "audioMuteBtn"]) {
+  for (const id of ["audioBack30Btn", "audioBack5Btn", "audioPlayPauseBtn", "audioForward5Btn", "audioForward30Btn", "audioSeek", "audioFollowBtn", "audioPlaybackRate", "audioVolumeBtn", "audioVolume", "audioMuteBtn"]) {
     const element = $(id);
     if (element) element.disabled = !state.current || state.current.status !== "done";
   }
@@ -420,7 +467,7 @@ function isInteractiveControlFocused() {
 function setAudioFollow(enabled, options = {}) {
   state.audioFollow = Boolean(enabled);
   updateStickyAudioControls();
-  updateReturnToAudioButton();
+  updateQuickScrollButtons();
   if (state.audioFollow && options.scroll !== false) scrollToActiveAudioSegment();
 }
 
@@ -443,12 +490,40 @@ function updateReturnToAudioButton() {
   }
 }
 
+function updateReturnToTopButton() {
+  const button = $("returnToTopBtn");
+  const editor = $("editor");
+  if (!button || !editor) return;
+  const editorVisible = !editor.classList.contains("hidden");
+  const editorTop = editor.getBoundingClientRect().top + window.scrollY;
+  const shouldShow = Boolean(state.current && editorVisible && window.scrollY > editorTop + 160);
+  button.classList.toggle("hidden", !shouldShow);
+}
+
+function updateQuickScrollButtons() {
+  updateReturnToAudioButton();
+  updateReturnToTopButton();
+}
+
+function scrollToProjectStart() {
+  const editor = $("editor");
+  const target = editor && !editor.classList.contains("hidden") ? editor : $("appLayout");
+  if (state.audioFollow) setAudioFollow(false, { scroll: false });
+  state.programmaticScrollUntil = Date.now() + 900;
+  if (target) {
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+  } else {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  setTimeout(updateQuickScrollButtons, 280);
+}
+
 function scrollToActiveAudioSegment() {
   const row = ensureSegmentRendered(state.activeSegmentIndex);
   if (!row) return;
   state.programmaticScrollUntil = Date.now() + 900;
   row.scrollIntoView({ behavior: "smooth", block: "center" });
-  setTimeout(updateReturnToAudioButton, 280);
+  setTimeout(updateQuickScrollButtons, 280);
 }
 
 function updateActiveSegmentFromAudio(options = {}) {
@@ -457,7 +532,7 @@ function updateActiveSegmentFromAudio(options = {}) {
     const previousRow = segmentRowForIndex(state.activeSegmentIndex);
     if (previousRow) previousRow.classList.remove("current-audio", "audio-playing");
     state.activeSegmentIndex = null;
-    updateReturnToAudioButton();
+    updateQuickScrollButtons();
     return;
   }
 
@@ -479,7 +554,7 @@ function updateActiveSegmentFromAudio(options = {}) {
     currentRow.classList.toggle("audio-playing", !player.paused && !player.ended);
   }
   if (options.scroll || shouldFollow) scrollToActiveAudioSegment();
-  updateReturnToAudioButton();
+  updateQuickScrollButtons();
 }
 
 register({
@@ -494,12 +569,18 @@ register({
   writeStoredAudioVolume,
   readStoredAudioMuted,
   writeStoredAudioMuted,
+  normalizeAudioPlaybackRate,
+  readStoredAudioPlaybackRate,
+  writeStoredAudioPlaybackRate,
+  applyAudioPlaybackRate,
+  setAudioPlaybackRate,
   setAudioVolumePopoverOpen,
   audioVolumeIconName,
   applyAudioVolume,
   setAudioVolume,
   toggleAudioMute,
   initAudioVolume,
+  initAudioPlaybackRate,
   currentPlaybackPosition,
   schedulePlaybackSave,
   rememberPlaybackPosition,
@@ -523,6 +604,9 @@ register({
   setAudioFollow,
   pauseAudioFollowFromUser,
   updateReturnToAudioButton,
+  updateReturnToTopButton,
+  updateQuickScrollButtons,
+  scrollToProjectStart,
   scrollToActiveAudioSegment,
   updateActiveSegmentFromAudio,
 });

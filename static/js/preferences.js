@@ -67,6 +67,7 @@ function currentBrowserPreferences() {
     proofreadEnabled: Boolean(state.proofreadEnabled),
     audioVolume: Math.max(0, Math.min(1, Number(state.audioVolume) || 0)),
     audioMuted: Boolean(state.audioMuted),
+    audioPlaybackRate: normalizeAudioPlaybackRate(state.audioPlaybackRate),
   };
 }
 
@@ -90,6 +91,10 @@ function normalizeBrowserPreferences(payload) {
   if (source.audioVolume !== undefined) {
     const volume = Number(source.audioVolume);
     if (Number.isFinite(volume)) preferences.audioVolume = Math.max(0, Math.min(1, volume));
+  }
+  if (source.audioPlaybackRate !== undefined) {
+    const rate = Number(source.audioPlaybackRate);
+    if (Number.isFinite(rate)) preferences.audioPlaybackRate = normalizeAudioPlaybackRate(rate);
   }
   return Object.keys(preferences).length ? preferences : null;
 }
@@ -143,6 +148,7 @@ function writeGlobalBrowserPreferences() {
   writeStoredBool(PROOFREAD_ENABLED_STORAGE_KEY, preferences.proofreadEnabled);
   writeStoredAudioVolume(preferences.audioVolume);
   writeStoredAudioMuted(preferences.audioMuted);
+  writeStoredAudioPlaybackRate(preferences.audioPlaybackRate);
   state.browserDefaultPreferences = preferences;
 }
 
@@ -173,6 +179,9 @@ function applyBrowserPreferences(payload) {
   if (Object.prototype.hasOwnProperty.call(preferences, "audioMuted")) {
     state.audioMuted = preferences.audioMuted;
     applyAudioVolume();
+  }
+  if (Object.prototype.hasOwnProperty.call(preferences, "audioPlaybackRate")) {
+    setAudioPlaybackRate(preferences.audioPlaybackRate, { persist: false });
   }
   return preferences;
 }

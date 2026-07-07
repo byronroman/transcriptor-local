@@ -148,7 +148,7 @@ async def lifespan(_: FastAPI):
 JOBS: dict[str, dict[str, Any]] = {}
 RUNNING_PROCESSES: dict[str, subprocess.Popen[str]] = {}
 JOBS_LOCK = threading.Lock()
-PROJECT_FILE_LOCKS: dict[str, threading.Lock] = {}
+PROJECT_FILE_LOCKS: dict[str, threading.RLock] = {}
 PROJECT_FILE_LOCKS_LOCK = threading.Lock()
 PROOFREAD_TOOL: Any = None
 PROOFREAD_LOCK = threading.Lock()
@@ -235,11 +235,11 @@ def metadata_path(project_id: str) -> Path:
     return project_dir(project_id) / "project.json"
 
 
-def project_file_lock(project_id: str) -> threading.Lock:
+def project_file_lock(project_id: str) -> threading.RLock:
     project_id = validate_project_id(project_id)
     with PROJECT_FILE_LOCKS_LOCK:
         if project_id not in PROJECT_FILE_LOCKS:
-            PROJECT_FILE_LOCKS[project_id] = threading.Lock()
+            PROJECT_FILE_LOCKS[project_id] = threading.RLock()
         return PROJECT_FILE_LOCKS[project_id]
 
 
@@ -335,6 +335,18 @@ def bump_content_revision(project: dict[str, Any]) -> int:
     next_revision = project_content_revision(project) + 1
     project["content_revision"] = next_revision
     return next_revision
+
+
+def segment_update_matches_project(project: dict[str, Any], payload: SegmentUpdate) -> bool:
+    server_segments = project.get("segments") if isinstance(project.get("segments"), list) else []
+    server_labels = project.get("speaker_labels") if isinstance(project.get("speaker_labels"), dict) else {}
+    if payload.segments != server_segments or payload.speaker_labels != server_labels:
+        return False
+    if payload.name is None:
+        return True
+    incoming_name = payload.name.strip() or project.get("name") or "Transcripcion"
+    server_name = project.get("name") or "Transcripcion"
+    return incoming_name == server_name
 
 
 def log_path(project_id: str) -> Path:
@@ -2504,14 +2516,16 @@ def api_project(project_id: str) -> dict[str, Any]:
 
 def api_update_project(project_id: str, payload: ProjectUpdate) -> dict[str, Any]:
     project_id = validate_project_id(project_id)
-    project = load_project(project_id)
-    if payload.name is not None:
-        project["name"] = payload.name.strip() or project["name"]
-    if payload.playback_position is not None:
-        project["playback_position"] = max(0.0, float(payload.playback_position))
-    project["updated_at"] = now_ms()
-    save_project(project)
-    return project
+    lock = project_file_lock(project_id)
+    with lock:
+        project = load_project(project_id)
+        if payload.name is not None:
+            project["name"] = payload.name.strip() or project["name"]
+        if payload.playback_position is not None:
+            project["playback_position"] = max(0.0, float(payload.playback_position))
+        project["updated_at"] = now_ms()
+        save_project(project)
+        return project
 
 
 def api_job(project_id: str) -> dict[str, Any]:
@@ -2612,21 +2626,25 @@ def api_relabel_speakers(project_id: str, payload: Optional[RelabelRequest] = No
 
 def api_save_segments(project_id: str, payload: SegmentUpdate) -> dict[str, Any]:
     project_id = validate_project_id(project_id)
-    project = load_project(project_id)
-    current_revision = project_content_revision(project)
-    if payload.base_content_revision is not None and int(payload.base_content_revision) != current_revision:
-        raise HTTPException(
-            status_code=409,
-            detail="Hay cambios guardados desde otra ventana. Revisa antes de sobrescribir.",
-        )
-    project["segments"] = payload.segments
-    project["speaker_labels"] = payload.speaker_labels
-    if payload.name is not None:
-        project["name"] = payload.name.strip() or project.get("name") or "Transcripcion"
-    bump_content_revision(project)
-    project["updated_at"] = now_ms()
-    save_project(project)
-    return project
+    lock = project_file_lock(project_id)
+    with lock:
+        project = load_project(project_id)
+        current_revision = project_content_revision(project)
+        if payload.base_content_revision is not None and int(payload.base_content_revision) != current_revision:
+            if segment_update_matches_project(project, payload):
+                return project
+            raise HTTPException(
+                status_code=409,
+                detail="Hay cambios guardados desde otra ventana. Revisa antes de sobrescribir.",
+            )
+        project["segments"] = payload.segments
+        project["speaker_labels"] = payload.speaker_labels
+        if payload.name is not None:
+            project["name"] = payload.name.strip() or project.get("name") or "Transcripcion"
+        bump_content_revision(project)
+        project["updated_at"] = now_ms()
+        save_project(project)
+        return project
 
 
 def api_proofread_status(start: bool = False) -> dict[str, Any]:

@@ -4,7 +4,10 @@
   "private": true,
   "description": "App local para transcribir entrevistas en el navegador usando herramientas instaladas en la misma carpeta.",
   "scripts": {
-    "test:e2e": "playwright test"
+    "test:js": "node scripts/check-js.cjs",
+    "test:py": "node scripts/run-python-tests.cjs",
+    "test:e2e": "playwright test",
+    "test:dev": "npm run test:js && npm run test:py && npm run test:e2e"
   },
   "repository": {
     "type": "git",

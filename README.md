@@ -87,3 +87,25 @@ models/
 ```
 
 Nada se sube a servicios externos durante la transcripcion.
+
+## Pruebas de desarrollo
+
+Estas pruebas son solo para quienes desarrollan la app. Los usuarios normales no necesitan Node, npm ni Playwright: basta con `setup_windows.bat` o `setup_mac.sh` y luego `run_windows.bat` o `run_mac.sh`.
+
+Para preparar las pruebas frontend:
+
+```bash
+npm install
+npx playwright install chromium
+```
+
+Comandos utiles:
+
+```bash
+npm run test:js
+npm run test:py
+npm run test:e2e
+npm run test:dev
+```
+
+`test:e2e` levanta la app localmente con Uvicorn y abre Chromium en modo headless para detectar errores de carga, modulos JavaScript rotos y problemas basicos de UI.
