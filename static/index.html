@@ -471,9 +471,22 @@
 
           <div id="segments" class="segments"></div>
         </div>
-        <button id="returnToAudioBtn" class="return-audio hidden" type="button">
-          Volver al audio
-        </button>
+        <div class="quick-scroll-actions" aria-label="Navegacion rapida">
+          <button
+            id="returnToTopBtn"
+            class="quick-scroll-button return-top secondary hidden"
+            type="button"
+          >
+            Volver al inicio
+          </button>
+          <button
+            id="returnToAudioBtn"
+            class="quick-scroll-button return-audio hidden"
+            type="button"
+          >
+            Volver al audio
+          </button>
+        </div>
         <div id="segmentUndoToast" class="segment-undo-toast hidden" role="status">
           <span id="segmentUndoText">Segmento borrado</span>
           <button id="undoSegmentDeleteBtn" class="secondary" type="button">

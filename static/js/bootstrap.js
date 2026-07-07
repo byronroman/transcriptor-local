@@ -333,13 +333,16 @@ export async function initApp() {
   on("returnToAudioBtn", "click", () => {
     scrollToActiveAudioSegment();
   });
+  on("returnToTopBtn", "click", () => {
+    scrollToProjectStart();
+  });
   window.addEventListener("scroll", () => {
     scheduleSegmentWindowRender();
-    updateReturnToAudioButton();
+    updateQuickScrollButtons();
   }, { passive: true });
   window.addEventListener("resize", () => {
     scheduleSegmentWindowRender();
-    updateReturnToAudioButton();
+    updateQuickScrollButtons();
   });
   window.addEventListener("wheel", pauseAudioFollowFromUser, { passive: true });
   window.addEventListener("touchmove", pauseAudioFollowFromUser, { passive: true });

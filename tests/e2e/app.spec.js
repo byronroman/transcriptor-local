@@ -46,6 +46,39 @@ test("renders project navigation controls inside the app shell", async ({ page }
 
   await expect(page.locator("#resumeJobBtn")).toHaveAttribute("type", "button");
   await expect(page.locator("#cancelJobBtn")).toHaveAttribute("type", "button");
+  await expect(page.locator("#returnToTopBtn")).toHaveAttribute("type", "button");
+  await expect(page.locator("#returnToAudioBtn")).toHaveAttribute("type", "button");
+});
+
+test("shows a quick action to return to the project start after scrolling", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    const empty = document.querySelector("#emptyState");
+    const editor = document.querySelector("#editor");
+    const segments = document.querySelector("#segments");
+    if (empty) empty.classList.add("hidden");
+    if (editor) editor.classList.remove("hidden");
+    if (segments) {
+      segments.innerHTML = "";
+      for (let index = 0; index < 30; index += 1) {
+        const segment = document.createElement("div");
+        segment.className = "segment";
+        segment.textContent = `Segmento ${index + 1}`;
+        segment.style.minHeight = "96px";
+        segments.appendChild(segment);
+      }
+    }
+    window.state.current = { id: "e2e-scroll", status: "done", segments: [] };
+  });
+
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await expect(page.locator("#returnToTopBtn")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.state.audioFollow)).toBe(true);
+  await page.locator("#returnToTopBtn").click();
+  await expect.poll(() => page.evaluate(() => window.state.audioFollow)).toBe(false);
+  await expect(page.locator("#audioFollowBtn")).toContainText("Seguir");
+  await expect(page.locator("#audioFollowBtn")).not.toHaveClass(/active/);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeLessThan(260);
 });
 
 test("persists audio playback speed preference", async ({ page }) => {

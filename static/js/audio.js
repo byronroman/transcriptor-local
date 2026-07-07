@@ -467,7 +467,7 @@ function isInteractiveControlFocused() {
 function setAudioFollow(enabled, options = {}) {
   state.audioFollow = Boolean(enabled);
   updateStickyAudioControls();
-  updateReturnToAudioButton();
+  updateQuickScrollButtons();
   if (state.audioFollow && options.scroll !== false) scrollToActiveAudioSegment();
 }
 
@@ -490,12 +490,40 @@ function updateReturnToAudioButton() {
   }
 }
 
+function updateReturnToTopButton() {
+  const button = $("returnToTopBtn");
+  const editor = $("editor");
+  if (!button || !editor) return;
+  const editorVisible = !editor.classList.contains("hidden");
+  const editorTop = editor.getBoundingClientRect().top + window.scrollY;
+  const shouldShow = Boolean(state.current && editorVisible && window.scrollY > editorTop + 160);
+  button.classList.toggle("hidden", !shouldShow);
+}
+
+function updateQuickScrollButtons() {
+  updateReturnToAudioButton();
+  updateReturnToTopButton();
+}
+
+function scrollToProjectStart() {
+  const editor = $("editor");
+  const target = editor && !editor.classList.contains("hidden") ? editor : $("appLayout");
+  if (state.audioFollow) setAudioFollow(false, { scroll: false });
+  state.programmaticScrollUntil = Date.now() + 900;
+  if (target) {
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+  } else {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  setTimeout(updateQuickScrollButtons, 280);
+}
+
 function scrollToActiveAudioSegment() {
   const row = ensureSegmentRendered(state.activeSegmentIndex);
   if (!row) return;
   state.programmaticScrollUntil = Date.now() + 900;
   row.scrollIntoView({ behavior: "smooth", block: "center" });
-  setTimeout(updateReturnToAudioButton, 280);
+  setTimeout(updateQuickScrollButtons, 280);
 }
 
 function updateActiveSegmentFromAudio(options = {}) {
@@ -504,7 +532,7 @@ function updateActiveSegmentFromAudio(options = {}) {
     const previousRow = segmentRowForIndex(state.activeSegmentIndex);
     if (previousRow) previousRow.classList.remove("current-audio", "audio-playing");
     state.activeSegmentIndex = null;
-    updateReturnToAudioButton();
+    updateQuickScrollButtons();
     return;
   }
 
@@ -526,7 +554,7 @@ function updateActiveSegmentFromAudio(options = {}) {
     currentRow.classList.toggle("audio-playing", !player.paused && !player.ended);
   }
   if (options.scroll || shouldFollow) scrollToActiveAudioSegment();
-  updateReturnToAudioButton();
+  updateQuickScrollButtons();
 }
 
 register({
@@ -576,6 +604,9 @@ register({
   setAudioFollow,
   pauseAudioFollowFromUser,
   updateReturnToAudioButton,
+  updateReturnToTopButton,
+  updateQuickScrollButtons,
+  scrollToProjectStart,
   scrollToActiveAudioSegment,
   updateActiveSegmentFromAudio,
 });
