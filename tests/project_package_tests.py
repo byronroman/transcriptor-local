@@ -19,6 +19,7 @@ from app.main import (
     api_export,
     api_relabel_speakers,
     api_save_segments,
+    api_update_project,
     assign_speakers,
     compact_error_message,
     default_speaker_labels,
@@ -40,6 +41,7 @@ from app.main import (
     safe_zip_member,
     sanitize_internal_loop_segments,
     select_model_for_request,
+    ProjectUpdate,
     SegmentUpdate,
     validate_project_id,
 )
@@ -325,6 +327,83 @@ class ProjectPackageTests(unittest.TestCase):
                 self.assertEqual(saved["content_revision"], 2)
                 self.assertEqual(saved["segments"][0]["text"], "original")
                 self.assertEqual(saved["name"], "Original")
+            finally:
+                app_main.PROJECTS_DIR = original_projects_dir  # type: ignore[assignment]
+
+    def test_save_segments_accepts_stale_revision_when_payload_is_unchanged(self) -> None:
+        from app import main as app_main
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_projects_dir = app_main.PROJECTS_DIR
+            app_main.PROJECTS_DIR = Path(tmpdir)  # type: ignore[assignment]
+            try:
+                project_id = "abc123fed456"
+                segments = [{"id": "seg-1", "text": "sin cambios"}]
+                labels = {"SPEAKER_00": "Entrevistador/a"}
+                pdir = Path(tmpdir) / project_id
+                pdir.mkdir(parents=True)
+                (pdir / "project.json").write_text(
+                    json.dumps(
+                        {
+                            "id": project_id,
+                            "name": "Original",
+                            "segments": segments,
+                            "speaker_labels": labels,
+                            "content_revision": 3,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+
+                updated = api_save_segments(
+                    project_id,
+                    SegmentUpdate(
+                        name="Original",
+                        segments=segments,
+                        speaker_labels=labels,
+                        base_content_revision=2,
+                    ),
+                )
+
+                self.assertEqual(updated["content_revision"], 3)
+                self.assertEqual(updated["segments"], segments)
+                self.assertEqual(app_main.load_project(project_id)["content_revision"], 3)
+            finally:
+                app_main.PROJECTS_DIR = original_projects_dir  # type: ignore[assignment]
+
+    def test_update_project_playback_preserves_content_revision_and_segments(self) -> None:
+        from app import main as app_main
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_projects_dir = app_main.PROJECTS_DIR
+            app_main.PROJECTS_DIR = Path(tmpdir)  # type: ignore[assignment]
+            try:
+                project_id = "abc456fed789"
+                segments = [{"id": "seg-1", "text": "contenido guardado"}]
+                pdir = Path(tmpdir) / project_id
+                pdir.mkdir(parents=True)
+                (pdir / "project.json").write_text(
+                    json.dumps(
+                        {
+                            "id": project_id,
+                            "name": "Original",
+                            "segments": segments,
+                            "speaker_labels": {},
+                            "content_revision": 4,
+                            "playback_position": 0,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+
+                updated = api_update_project(project_id, ProjectUpdate(playback_position=42.5))
+
+                self.assertEqual(updated["content_revision"], 4)
+                self.assertEqual(updated["segments"], segments)
+                self.assertEqual(updated["playback_position"], 42.5)
+                saved = app_main.load_project(project_id)
+                self.assertEqual(saved["content_revision"], 4)
+                self.assertEqual(saved["segments"], segments)
             finally:
                 app_main.PROJECTS_DIR = original_projects_dir  # type: ignore[assignment]
 
