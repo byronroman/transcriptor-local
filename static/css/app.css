@@ -1029,7 +1029,7 @@ audio {
   top: 8px;
   z-index: 35;
   display: grid;
-  grid-template-columns: auto minmax(180px, 1fr) auto auto;
+  grid-template-columns: auto minmax(180px, 1fr) auto auto auto;
   gap: 10px;
   align-items: center;
   padding: 9px 10px;
@@ -1080,6 +1080,44 @@ audio {
   font-size: 13px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
+}
+
+.audio-speed-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+  margin-bottom: 0;
+  min-width: 126px;
+  height: 34px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.audio-speed-control span {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  line-height: 1;
+  transform: translateY(1px);
+  white-space: nowrap;
+}
+
+.audio-speed-control select {
+  width: 68px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--secondary-border);
+  border-radius: 8px;
+  background: var(--control-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 32px;
 }
 
 .audio-volume-menu {
@@ -2463,6 +2501,15 @@ body.save-blocked .editor {
 
   .audio-sticky-time {
     justify-content: flex-start;
+  }
+
+  .audio-speed-control {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .audio-speed-control select {
+    width: 110px;
   }
 
   .audio-volume-menu {

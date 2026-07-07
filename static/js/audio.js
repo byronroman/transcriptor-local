@@ -88,6 +88,47 @@ function writeStoredAudioMuted(muted) {
   }
 }
 
+function normalizeAudioPlaybackRate(value) {
+  const allowed = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+  if (value === null || value === undefined || value === "") return 1;
+  const rate = Number(value);
+  if (!Number.isFinite(rate)) return 1;
+  return allowed.reduce((best, option) =>
+    Math.abs(option - rate) < Math.abs(best - rate) ? option : best
+  );
+}
+
+function readStoredAudioPlaybackRate() {
+  try {
+    return normalizeAudioPlaybackRate(localStorage.getItem(AUDIO_PLAYBACK_RATE_STORAGE_KEY));
+  } catch (_) {
+    return 1;
+  }
+}
+
+function writeStoredAudioPlaybackRate(rate) {
+  try {
+    localStorage.setItem(AUDIO_PLAYBACK_RATE_STORAGE_KEY, String(normalizeAudioPlaybackRate(rate)));
+  } catch (_) {
+    // Ignore storage failures.
+  }
+}
+
+function applyAudioPlaybackRate() {
+  const rate = normalizeAudioPlaybackRate(state.audioPlaybackRate);
+  state.audioPlaybackRate = rate;
+  const player = $("audioPlayer");
+  if (player) player.playbackRate = rate;
+  const select = $("audioPlaybackRate");
+  if (select) select.value = String(rate);
+}
+
+function setAudioPlaybackRate(value, options = {}) {
+  state.audioPlaybackRate = normalizeAudioPlaybackRate(value);
+  applyAudioPlaybackRate();
+  if (options.persist !== false) persistBrowserPreferenceState();
+}
+
 function setAudioVolumePopoverOpen(open) {
   state.audioVolumePopoverOpen = Boolean(open);
   const menu = $("audioVolumeMenu");
@@ -166,6 +207,11 @@ function initAudioVolume() {
   state.previousAudioVolume = state.audioVolume > 0 ? state.audioVolume : 1;
   state.audioMuted = readStoredAudioMuted();
   applyAudioVolume();
+}
+
+function initAudioPlaybackRate() {
+  state.audioPlaybackRate = readStoredAudioPlaybackRate();
+  applyAudioPlaybackRate();
 }
 
 function currentPlaybackPosition() {
@@ -316,13 +362,14 @@ function updateStickyAudioControls() {
     seek.value = duration ? String(Math.round((current / duration) * 1000)) : "0";
   }
   applyAudioVolume();
+  applyAudioPlaybackRate();
   const follow = $("audioFollowBtn");
   if (follow) {
     follow.textContent = state.audioFollow ? "Siguiendo" : "Seguir";
     follow.classList.toggle("active", state.audioFollow);
     follow.title = state.audioFollow ? "Desactivar seguimiento automatico" : "Seguir segmento actual";
   }
-  for (const id of ["audioBack30Btn", "audioBack5Btn", "audioPlayPauseBtn", "audioForward5Btn", "audioForward30Btn", "audioSeek", "audioFollowBtn", "audioVolumeBtn", "audioVolume", "audioMuteBtn"]) {
+  for (const id of ["audioBack30Btn", "audioBack5Btn", "audioPlayPauseBtn", "audioForward5Btn", "audioForward30Btn", "audioSeek", "audioFollowBtn", "audioPlaybackRate", "audioVolumeBtn", "audioVolume", "audioMuteBtn"]) {
     const element = $(id);
     if (element) element.disabled = !state.current || state.current.status !== "done";
   }
@@ -494,12 +541,18 @@ register({
   writeStoredAudioVolume,
   readStoredAudioMuted,
   writeStoredAudioMuted,
+  normalizeAudioPlaybackRate,
+  readStoredAudioPlaybackRate,
+  writeStoredAudioPlaybackRate,
+  applyAudioPlaybackRate,
+  setAudioPlaybackRate,
   setAudioVolumePopoverOpen,
   audioVolumeIconName,
   applyAudioVolume,
   setAudioVolume,
   toggleAudioMute,
   initAudioVolume,
+  initAudioPlaybackRate,
   currentPlaybackPosition,
   schedulePlaybackSave,
   rememberPlaybackPosition,

@@ -26,6 +26,7 @@ test("loads the modular app without console errors", async ({ page }) => {
   await expect(page.locator("#profileSelect")).toBeAttached();
   await expect(page.locator("#packageInput")).toBeAttached();
   await expect(page.locator("#themeToggleBtn")).toBeAttached();
+  await expect(page.locator("#audioPlaybackRate")).toBeAttached();
   await expect(page.locator("#projectList")).toBeAttached();
 });
 
@@ -45,4 +46,20 @@ test("renders project navigation controls inside the app shell", async ({ page }
 
   await expect(page.locator("#resumeJobBtn")).toHaveAttribute("type", "button");
   await expect(page.locator("#cancelJobBtn")).toHaveAttribute("type", "button");
+});
+
+test("persists audio playback speed preference", async ({ page }) => {
+  await page.goto("/");
+  const speed = page.locator("#audioPlaybackRate");
+  await expect(speed).toHaveValue("1");
+
+  await speed.evaluate((select) => {
+    select.value = "1.5";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+
+  await expect(speed).toHaveValue("1.5");
+  await expect.poll(async () =>
+    page.evaluate(() => localStorage.getItem("transcriptor.audioPlaybackRate"))
+  ).toBe("1.5");
 });

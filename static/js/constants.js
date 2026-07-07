@@ -4,6 +4,7 @@ export const SPEAKERS_PANEL_STORAGE_KEY = "transcriptor.speakersPanelOpen";
 export const PROOFREAD_ENABLED_STORAGE_KEY = "transcriptor.proofreadEnabled.v2";
 export const AUDIO_VOLUME_STORAGE_KEY = "transcriptor.audioVolume";
 export const AUDIO_MUTED_STORAGE_KEY = "transcriptor.audioMuted";
+export const AUDIO_PLAYBACK_RATE_STORAGE_KEY = "transcriptor.audioPlaybackRate";
 export const BROWSER_SETTINGS_FORMAT = "transcriptor-local-browser-settings";
 export const PROJECT_PREFERENCES_PREFIX = "transcriptor.projectPreferences.";
 export const DRAFT_DB_NAME = "transcriptor-drafts";

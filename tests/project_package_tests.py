@@ -530,6 +530,7 @@ class ProjectPackageTests(unittest.TestCase):
                         "proofreadEnabled": True,
                         "audioVolume": 1.5,
                         "audioMuted": False,
+                        "audioPlaybackRate": 1.5,
                         "draft": "no portable",
                     }
                 },
@@ -546,6 +547,7 @@ class ProjectPackageTests(unittest.TestCase):
             self.assertEqual(settings["preferences"]["theme"], "dark")
             self.assertTrue(settings["preferences"]["sidebarCollapsed"])
             self.assertEqual(settings["preferences"]["audioVolume"], 1.0)
+            self.assertEqual(settings["preferences"]["audioPlaybackRate"], 1.5)
             self.assertNotIn("draft", settings["preferences"])
 
     def test_package_browser_settings_are_reported_and_returned_on_import(self) -> None:
@@ -564,6 +566,7 @@ class ProjectPackageTests(unittest.TestCase):
                     "proofreadEnabled": False,
                     "audioMuted": True,
                     "audioVolume": 0.42,
+                    "audioPlaybackRate": 0.75,
                 },
             }
             try:
@@ -581,6 +584,7 @@ class ProjectPackageTests(unittest.TestCase):
 
                 self.assertTrue(info["has_browser_settings"])
                 self.assertEqual(info["browser_settings"]["preferences"]["audioVolume"], 0.42)
+                self.assertEqual(info["browser_settings"]["preferences"]["audioPlaybackRate"], 0.75)
                 self.assertEqual(imported["browser_settings"]["preferences"]["theme"], "light")
                 self.assertNotIn("browser_settings", saved)
             finally:

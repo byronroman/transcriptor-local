@@ -17,6 +17,7 @@ export async function initApp() {
   initTheme();
   initUiPreferences();
   initAudioVolume();
+  initAudioPlaybackRate();
   state.browserDefaultPreferences = currentBrowserPreferences();
   if (state.proofreadEnabled) loadProofreadStatus({ start: true }).catch(() => {});
   on("themeToggleBtn", "click", () => {
@@ -304,6 +305,10 @@ export async function initApp() {
   });
   on("audioVolume", "change", (event) => {
     setAudioVolume(Number(event.target?.value) / 100);
+  });
+  on("audioPlaybackRate", "change", (event) => {
+    setAudioPlaybackRate(event.target?.value);
+    updateStickyAudioControls();
   });
   on("audioVolumeBtn", "click", (event) => {
     event.stopPropagation();

@@ -130,6 +130,16 @@ def normalize_browser_settings(payload: Any) -> Optional[dict[str, Any]]:
         if math.isfinite(volume):
             normalized["audioVolume"] = round(max(0.0, min(1.0, volume)), 3)
 
+    if "audioPlaybackRate" in preferences:
+        raw_rate = preferences.get("audioPlaybackRate")
+        try:
+            rate = float(raw_rate) if raw_rate is not None else math.nan
+        except (TypeError, ValueError):
+            rate = math.nan
+        if math.isfinite(rate):
+            allowed_rates = (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)
+            normalized["audioPlaybackRate"] = min(allowed_rates, key=lambda item: abs(item - rate))
+
     if not normalized:
         return None
     result: dict[str, Any] = {
